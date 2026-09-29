@@ -1,0 +1,8 @@
+{
+  "name": "نظام لمسات المعمار ERP - Lamasat Al-Meamar",
+  "description": "نظام إدارة الموارد المالية والتشغيلية المتكامل لشركة لمسات المعمار للمقاولات والهندسة، مع نظام تراخيص رقمي متقدم والتحكم بالصلاحيات.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
