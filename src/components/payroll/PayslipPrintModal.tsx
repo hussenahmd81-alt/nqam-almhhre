@@ -3,6 +3,7 @@ import { X, Printer, CheckCircle, ShieldCheck, UserCheck, Building } from 'lucid
 import { MonthlySalarySlip, Employee } from '../../types/erp';
 import { COMPANY_BILLING_INFO } from '../../services/dataService';
 import { tafqeetSAR } from '../../utils/financialUtils';
+import { useErp } from '../../context/ErpContext';
 
 interface PayslipPrintModalProps {
   slip: MonthlySalarySlip;
@@ -17,6 +18,7 @@ export const PayslipPrintModal: React.FC<PayslipPrintModalProps> = ({
   isOpen,
   onClose
 }) => {
+  const { userProfiles } = useErp();
   if (!isOpen) return null;
 
   const handlePrint = () => {
@@ -115,7 +117,7 @@ export const PayslipPrintModal: React.FC<PayslipPrintModalProps> = ({
             </div>
             <div className="col-span-2">
               <span className="text-slate-500 block">رقم الحساب الدولي (IBAN):</span>
-              <span className="font-mono text-slate-800 font-bold">{employee?.iban || 'SA4480000201608010009111'}</span>
+              <span className="font-mono text-slate-800 font-bold">{employee?.iban || 'غير مضاف'}</span>
             </div>
             <div>
               <span className="text-slate-500 block">طريقة الدفع:</span>
@@ -213,12 +215,12 @@ export const PayslipPrintModal: React.FC<PayslipPrintModalProps> = ({
             <div className="space-y-12">
               <p className="text-slate-600 font-medium">إعداد الموارد البشرية (HR)</p>
               <div className="border-b border-slate-400 mx-auto w-32"></div>
-              <p className="font-bold text-slate-800">أ. ريم الشمري</p>
+              <p className="font-bold text-slate-800">مسؤول الموارد البشرية</p>
             </div>
             <div className="space-y-12">
               <p className="text-slate-600 font-medium">اعتماد الإدارة المالية والحسابات</p>
               <div className="border-b border-slate-400 mx-auto w-32"></div>
-              <p className="font-bold text-slate-800">أ. حسام المالي</p>
+              <p className="font-bold text-slate-800">{userProfiles.accountant.nameAr}</p>
             </div>
             <div className="space-y-12">
               <p className="text-slate-600 font-medium">توقيع واستلام الموظف</p>

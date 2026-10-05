@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { useErp } from '../../context/ErpContext';
-import { DEMO_KEYS } from '../../services/licenseService';
 import {
   ShieldCheck,
   KeyRound,
@@ -290,7 +289,7 @@ export const LicenseManagementView: React.FC = () => {
               مختبر فحص التراخيص واختبار الحماية (License Verification Engine)
             </h3>
             <p className="text-xs text-slate-400 mt-0.5">
-              يمكنك تجربة إدخال مفتاح ترخيص جديد أو اختبار حالات الترخيص المختلفة (المنتهي، غير المصرح، أو المزور) للتحقق من يقظة نظام الأمان.
+              أدخل مفتاح الترخيص المعتمد عند توفر خدمة التحقق المركزية.
             </p>
           </div>
 
@@ -310,7 +309,7 @@ export const LicenseManagementView: React.FC = () => {
             value={inputKey}
             onChange={(e) => setInputKey(e.target.value)}
             disabled={!canManage}
-            placeholder="أدخل رمز الترخيص للتحقق (مثال: LAMASAT-ARCH-2026-X9F4-PRO-SA)"
+            placeholder="أدخل رمز الترخيص"
             className="flex-1 px-4 py-3 rounded-xl bg-slate-950 border border-slate-700 text-white font-mono text-sm placeholder-slate-500 focus:outline-none focus:border-amber-500 disabled:opacity-50 disabled:cursor-not-allowed"
           />
           <button
@@ -332,40 +331,6 @@ export const LicenseManagementView: React.FC = () => {
           </button>
         </div>
 
-        {/* Preset Demo Keys for Instant Testing */}
-        <div className="mt-6 pt-4 border-t border-slate-800/80">
-          <span className="text-xs font-bold text-slate-300 block mb-3">
-            مفاتيح تجريبية لاختبار استجابة النظام الأمني (Demo Test Scenarios):
-          </span>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            {DEMO_KEYS.map((demo, idx) => (
-              <button
-                key={idx}
-                onClick={() => {
-                  setInputKey(demo.key);
-                  handleVerify(demo.key);
-                }}
-                disabled={!canManage}
-                className="p-3 rounded-xl border border-slate-800 bg-slate-950/60 hover:border-amber-500/40 hover:bg-slate-900 text-right transition-all group disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <div className="flex items-center justify-between text-[11px] font-bold text-white mb-1">
-                  <span className="truncate group-hover:text-amber-400">{demo.label}</span>
-                  {demo.expectedStatus === 'active' ? (
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
-                  ) : (
-                    <span className="w-2 h-2 rounded-full bg-rose-400 shrink-0" />
-                  )}
-                </div>
-                <div className="font-mono text-[10px] text-slate-400 truncate mb-1">
-                  {demo.key}
-                </div>
-                <p className="text-[10px] text-slate-500 line-clamp-2">
-                  {demo.description}
-                </p>
-              </button>
-            ))}
-          </div>
-        </div>
       </div>
     </div>
   );

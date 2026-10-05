@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useErp } from '../../context/ErpContext';
 import { Invoice, InvoiceItem, InvoiceType, InvoiceStatus } from '../../types/erp';
-import { formatSAR, tafqeetSAR, roundMoney } from '../../utils/financialUtils';
+import { formatSAR, tafqeetSAR, calculateInvoiceTotals, calculateQuantityTotal, roundMoney } from '../../utils/financialUtils';
 import { OfficialInvoicePrintModal } from './OfficialInvoicePrintModal';
 import {
   FileText,
@@ -40,7 +40,8 @@ export const InvoiceEngineView: React.FC = () => {
     currentUser,
     hasPermission,
     selectedInvoiceForPrint,
-    setSelectedInvoiceForPrint
+    setSelectedInvoiceForPrint,
+    companyBillingInfo
   } = useErp();
 
   // Filter & Search states
@@ -66,24 +67,20 @@ export const InvoiceEngineView: React.FC = () => {
     d.setDate(d.getDate() + 30);
     return d.toISOString().split('T')[0];
   });
-  const [paymentTerms, setPaymentTerms] = useState<string>(
-    'دفعة 50% عند التوقيع، والمتبقي خلال 30 يوماً من إتمام الفحص الهندسي.'
-  );
-  const [notes, setNotes] = useState<string>(
-    'تخضع هذه الفاتورة لمتطلبات هيئة الزكاة والضريبة والجمارك (ZATCA).'
-  );
+  const [paymentTerms, setPaymentTerms] = useState<string>('');
+  const [notes, setNotes] = useState<string>('');
   const [discountPercent, setDiscountPercent] = useState<number>(0);
-  const [taxRate, setTaxRate] = useState<number>(15);
+  const [taxRate, setTaxRate] = useState<number>(0);
 
   // Items State
   const [items, setItems] = useState<InvoiceItem[]>([
     {
       id: 'itm-1',
-      description: 'أعمال الهيكل الخرساني والتشطيبات المعمارية المعتمدة',
+      description: '',
       unit: 'م²',
-      quantity: 100,
-      unitPrice: 250,
-      total: 25000
+      quantity: 1,
+      unitPrice: 0,
+      total: 0
     }
   ]);
 
@@ -99,7 +96,7 @@ export const InvoiceEngineView: React.FC = () => {
       if (field === 'quantity' || field === 'unitPrice') {
         const q = field === 'quantity' ? Number(value) : item.quantity;
         const p = field === 'unitPrice' ? Number(value) : item.unitPrice;
-        item.total = roundMoney(q * p);
+        item.total = calculateQuantityTotal(q, p);
       }
       next[index] = item;
       return next;
@@ -114,8 +111,8 @@ export const InvoiceEngineView: React.FC = () => {
         description: '',
         unit: 'م²',
         quantity: 1,
-        unitPrice: 100,
-        total: 100
+        unitPrice: 0,
+        total: 0
       }
     ]);
   };
@@ -127,18 +124,7 @@ export const InvoiceEngineView: React.FC = () => {
 
   // Live Totals Computation for Form
   const formTotals = useMemo(() => {
-    const subtotal = roundMoney(items.reduce((sum, item) => sum + (Number(item.total) || 0), 0));
-    const discountAmount = roundMoney(subtotal * (discountPercent / 100));
-    const taxableAmount = Math.max(0, subtotal - discountAmount);
-    const taxAmount = roundMoney(taxableAmount * (taxRate / 100));
-    const grandTotal = roundMoney(taxableAmount + taxAmount);
-
-    return {
-      subtotal,
-      discountAmount,
-      taxAmount,
-      grandTotal
-    };
+    return calculateInvoiceTotals(items, discountPercent, taxRate);
   }, [items, discountPercent, taxRate]);
 
   // Submit New Invoice
@@ -156,7 +142,7 @@ export const InvoiceEngineView: React.FC = () => {
       clientVatNumber: clientVatNumber || undefined,
       clientAddress: clientAddress || undefined,
       projectId: projectId || undefined,
-      projectName: proj?.nameAr || 'مشروع هندسي عام',
+      projectName: proj?.nameAr,
       contractRef: contractRef || undefined,
       items,
       subtotal: formTotals.subtotal,
@@ -186,8 +172,8 @@ export const InvoiceEngineView: React.FC = () => {
           description: '',
           unit: 'م²',
           quantity: 1,
-          unitPrice: 100,
-          total: 100
+          unitPrice: 0,
+          total: 0
         }
       ]);
     }
@@ -273,7 +259,7 @@ export const InvoiceEngineView: React.FC = () => {
               <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">
                 منظومة الفوترة والمستخلصات الذكية
               </span>
-              <span className="text-xs text-slate-400">| متوافق مع هيئة ZATCA الضريبية</span>
+              <span className="text-xs text-slate-400">| حساب تلقائي للبنود والخصم والضريبة</span>
             </div>
             <h1 className="text-2xl font-bold text-white mt-1">محرك الفواتير والمستخلصات المعتمدة</h1>
             <p className="text-sm text-slate-400">
@@ -380,11 +366,11 @@ export const InvoiceEngineView: React.FC = () => {
             <div className="text-2xl font-bold font-mono text-sky-300 tracking-tight">
               {formatSAR(metrics.totalVat)}
             </div>
-            <p className="text-xs text-slate-400 mt-1">إقرار ضريبي إلكتروني ZATCA</p>
+            <p className="text-xs text-slate-400 mt-1">إجمالي الضريبة أو الرسوم المسجلة</p>
           </div>
           <div className="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-400">
-            <span>الرقم الضريبي الموحد</span>
-            <span className="text-slate-300 font-mono text-[10px]">310294857200003</span>
+            <span>الرقم الضريبي</span>
+            <span className="text-slate-300 font-mono text-[10px]">{companyBillingInfo.vatNumber || 'غير مضاف'}</span>
           </div>
         </div>
       </div>
@@ -625,7 +611,7 @@ export const InvoiceEngineView: React.FC = () => {
                 <FileText className="w-6 h-6" />
               </div>
               <div>
-                <h3 className="text-xl font-bold text-white">إصدار فاتورة رسمية معتمدة (ZATCA)</h3>
+                <h3 className="text-xl font-bold text-white">إصدار فاتورة رسمية</h3>
                 <p className="text-xs text-slate-400">
                   إدخال بنود الأعمال المعمارية، احتساب الضريبة والتفقيط، وإصدار الفاتورة فورياً.
                 </p>
@@ -672,7 +658,7 @@ export const InvoiceEngineView: React.FC = () => {
                   </label>
                   <input
                     type="text"
-                    placeholder="مثال: CONT-LM-2026-09"
+                    placeholder="رقم العقد أو المرجع"
                     value={contractRef}
                     onChange={(e) => setContractRef(e.target.value)}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-amber-500"
@@ -693,7 +679,7 @@ export const InvoiceEngineView: React.FC = () => {
                     <input
                       type="text"
                       required
-                      placeholder="مثال: مجموعة استثمار الأفق العقارية"
+                      placeholder="اسم العميل أو الجهة"
                       value={clientName}
                       onChange={(e) => setClientName(e.target.value)}
                       className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"

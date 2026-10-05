@@ -255,7 +255,7 @@ export const VendorStatementPrintModal: React.FC<VendorStatementPrintModalProps>
               <div className="space-y-10">
                 <p className="font-bold text-slate-800">إعداد / قسم المحاسبة والتدقيق</p>
                 <div className="border-b border-dashed border-slate-400 w-3/4 mx-auto pb-1 text-slate-700 font-bold">
-                  {userProfiles.accountant?.nameAr || 'حسين احمد'}
+                  {userProfiles.accountant?.nameAr || 'المحاسب المالي'}
                 </div>
                 <p className="text-[10px] text-slate-400">التوقيع والتاريخ</p>
               </div>
@@ -263,7 +263,7 @@ export const VendorStatementPrintModal: React.FC<VendorStatementPrintModalProps>
               <div className="space-y-10">
                 <p className="font-bold text-slate-800">اعتماد المدير العام</p>
                 <div className="border-b border-dashed border-slate-400 w-3/4 mx-auto pb-1 text-slate-700 font-bold">
-                  {userProfiles.super_admin?.nameAr || 'صادق جعفر'}
+                  {userProfiles.super_admin?.nameAr || 'المدير العام'}
                 </div>
                 <p className="text-[10px] text-slate-400">الختم والاعتماد الرسمي</p>
               </div>

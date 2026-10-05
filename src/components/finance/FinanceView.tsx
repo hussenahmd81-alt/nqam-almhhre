@@ -36,7 +36,7 @@ export const FinanceView: React.FC = () => {
   const [projectId, setProjectId] = useState<string>(projects[0]?.id || '');
   const [recipientName, setRecipientName] = useState<string>('');
   const [category, setCategory] = useState<FinancialTransaction['category']>('subcontractor');
-  const [amount, setAmount] = useState<number>(50000);
+  const [amount, setAmount] = useState<number>(0);
   const [notes, setNotes] = useState<string>('');
 
   const canCreate = hasPermission('canCreateInvoice');
@@ -46,15 +46,16 @@ export const FinanceView: React.FC = () => {
   const handleCreateSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const proj = projects.find((p) => p.id === projectId);
+    if (!proj || !recipientName.trim() || Number(amount) <= 0) return;
     const success = addTransaction({
       invoiceNumber,
       date: new Date().toISOString().split('T')[0],
       projectId,
-      projectName: proj?.nameAr || 'مشروع هندسي عام',
+      projectName: proj.nameAr,
       recipientName,
       category,
       amount: Number(amount),
-      vatAmount: Math.round(Number(amount) * 0.15),
+      vatAmount: 0,
       status: 'pending',
       notes
     });
@@ -301,7 +302,7 @@ export const FinanceView: React.FC = () => {
                   required
                   value={recipientName}
                   onChange={(e) => setRecipientName(e.target.value)}
-                  placeholder="مثال: شركة مصاعد القمة الهندسية"
+                  placeholder="اسم الجهة أو المستلم"
                   className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white focus:outline-none focus:border-amber-500"
                 />
               </div>

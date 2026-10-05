@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useErp } from '../../context/ErpContext';
+import { sumMoney } from '../../utils/financialUtils';
 import {
   TrendingUp,
   Building2,
@@ -55,6 +56,7 @@ export const ExecutiveDashboard: React.FC = () => {
     procurements,
     fuelLogs,
     officeExpenses
+    ,cashVouchers
   } = useErp();
 
   // Floating speed dial state
@@ -62,7 +64,13 @@ export const ExecutiveDashboard: React.FC = () => {
 
   // Financial calculations
   const totalContractValue = projects.reduce((acc, p) => acc + p.totalBudget, 0);
-  const totalProjectSpent = projects.reduce((acc, p) => acc + p.spentAmount, 0);
+  const getProjectSpent = (projectId: string, openingSpent: number) => sumMoney([
+    openingSpent,
+    ...cashVouchers
+      .filter((voucher) => voucher.type === 'cash_out' && voucher.projectId === projectId)
+      .map((voucher) => voucher.amount)
+  ]);
+  const totalProjectSpent = sumMoney(projects.map((project) => getProjectSpent(project.id, project.spentAmount)));
   const averageProgress = projects.length > 0
     ? Math.round(projects.reduce((acc, p) => acc + p.progressPercent, 0) / projects.length)
     : 0;
@@ -357,7 +365,10 @@ export const ExecutiveDashboard: React.FC = () => {
               </div>
             ) : (
               projects.map((proj) => {
-                const spentPercent = Math.min(100, Math.round((proj.spentAmount / proj.totalBudget) * 100));
+                const actualSpent = getProjectSpent(proj.id, proj.spentAmount);
+                const spentPercent = proj.totalBudget > 0
+                  ? Math.min(100, Math.round((actualSpent / proj.totalBudget) * 100))
+                  : 0;
                 return (
                   <div
                     key={proj.id}
@@ -381,13 +392,13 @@ export const ExecutiveDashboard: React.FC = () => {
 
                     <div className="mt-3 space-y-1">
                       <div className="flex justify-between text-[11px] text-slate-400">
-                        <span>المنصرف الفعلي: {proj.spentAmount.toLocaleString()} د.ع</span>
+                        <span>المنصرف الفعلي: {actualSpent.toLocaleString()} د.ع</span>
                         <span>نسبة الصرف: {spentPercent}%</span>
                       </div>
                       <div className="h-2 w-full bg-slate-800 rounded-full overflow-hidden">
                         <div
                           className="h-full bg-gradient-to-r from-amber-500 to-amber-400 rounded-full transition-all duration-300"
-                          style={{ width: `${proj.progressPercent}%` }}
+                          style={{ width: `${spentPercent}%` }}
                         />
                       </div>
                     </div>

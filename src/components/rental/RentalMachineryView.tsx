@@ -729,7 +729,7 @@ export const RentalMachineryView: React.FC = () => {
                   required
                   value={machineForm.machineryName}
                   onChange={(e) => setMachineForm({ ...machineForm, machineryName: e.target.value })}
-                  placeholder="مثال: حفار كوماتسو 220، وانيت إشراف تويوتا هايلوكس..."
+                  placeholder="اسم الآلية أو المركبة"
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-amber-500"
                 />
               </div>
@@ -762,7 +762,7 @@ export const RentalMachineryView: React.FC = () => {
                     onChange={(e) =>
                       setMachineForm({ ...machineForm, plateOrSerialNumber: e.target.value })
                     }
-                    placeholder="مثال: أ ب ج 1234"
+                    placeholder="رقم اللوحة أو الرقم التسلسلي"
                     className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-amber-500"
                   />
                 </div>

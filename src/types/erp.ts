@@ -516,8 +516,11 @@ export interface ErpBackupData {
   licenseHash: string;
   data: {
     projects: Project[];
+    transactions: FinancialTransaction[];
     invoices: Invoice[];
     cashVouchers: CashVoucher[];
+    dailyRegisters: DailySafeRegister[];
+    openingBalance: number;
     siteLogs: SiteOperationLog[];
     employees: Employee[];
     salarySlips: MonthlySalarySlip[];

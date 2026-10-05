@@ -35,34 +35,6 @@ export const DEFAULT_LICENSE: LicenseInfo = {
   lastVerificationTime: new Date().toISOString()
 };
 
-// Preset demo keys for testing verification behavior
-export const DEMO_KEYS = [
-  {
-    label: 'مفتاح مؤسسي معتمد وصالح (شركة لمسات المعمار)',
-    key: 'LAMASAT-ARCH-2026-X9F4-PRO-SA',
-    expectedStatus: 'active' as const,
-    description: 'ترخيص كامل الصلاحيات مخصص لشركة لمسات المعمار للمقاولات'
-  },
-  {
-    label: 'مفتاح منتهي الصلاحية (Expired Test Key)',
-    key: 'LAMASAT-EXPIRED-2025-001A-EXP',
-    expectedStatus: 'expired' as const,
-    description: 'انتهت صلاحية هذا المفتاح في ديسمبر 2025'
-  },
-  {
-    label: 'مفتاح نطاق غير مصرح (Domain Mismatch)',
-    key: 'LAMASAT-FOREIGN-DOMAIN-8832-MIS',
-    expectedStatus: 'domain_mismatch' as const,
-    description: 'المفتاح مربوط بنطاق خارجي غير مصرح له بتشغيل النظام'
-  },
-  {
-    label: 'مفتاح مزور / غير صالح (Tampered Key)',
-    key: 'PIRATED-CRACK-9999-FAKE-KEY',
-    expectedStatus: 'invalid' as const,
-    description: 'مفتاح غير مسجل في خوارزمية التشفير المعمارية'
-  }
-];
-
 export function verifyLicenseKey(key: string): {
   isValid: boolean;
   status: 'active' | 'expired' | 'invalid' | 'domain_mismatch';
@@ -76,34 +48,6 @@ export function verifyLicenseKey(key: string): {
       isValid: false,
       status: 'invalid',
       message: 'الرجاء إدخال رمز الترخيص للتحقق'
-    };
-  }
-
-  // 1. Check for known test keys
-  if (cleanKey === 'LAMASAT-EXPIRED-2025-001A-EXP') {
-    return {
-      isValid: false,
-      status: 'expired',
-      message: 'تم إيقاف النظام: انتهت صلاحية ترخيص شركة لمسات المعمار بتاريخ 2025-12-31. يرجى التجديد.',
-      licenseData: {
-        licenseKey: cleanKey,
-        status: 'expired',
-        expiresAt: '2025-12-31',
-        daysRemaining: 0
-      }
-    };
-  }
-
-  if (cleanKey === 'LAMASAT-FOREIGN-DOMAIN-8832-MIS') {
-    return {
-      isValid: false,
-      status: 'domain_mismatch',
-      message: 'انتهاك ترخيص: هذا المفتاح مقيد بنطاق محدد ولا يتطابق مع هذا السيرفر أو النطاق الحالي.',
-      licenseData: {
-        licenseKey: cleanKey,
-        status: 'domain_mismatch',
-        boundDomain: 'restricted-node-unauthorized.net'
-      }
     };
   }
 

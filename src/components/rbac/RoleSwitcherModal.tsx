@@ -23,8 +23,8 @@ export const RoleSwitcherModal: React.FC = () => {
     currentUser,
     switchRoleWithPin,
     updateRolePin,
-    userPins,
     userProfiles,
+    activeUserRoles,
     setCurrentTab,
     isRoleModalOpen,
     setIsRoleModalOpen
@@ -36,14 +36,16 @@ export const RoleSwitcherModal: React.FC = () => {
   const [showPinManagement, setShowPinManagement] = useState<boolean>(false);
 
   // States for PIN management (for Super Admin)
-  const [selectedRoleToUpdate, setSelectedRoleToUpdate] = useState<UserRole>('accountant');
+  const [selectedRoleToUpdate, setSelectedRoleToUpdate] = useState<UserRole>('super_admin');
   const [newPinValue, setNewPinValue] = useState<string>('');
   const [pinUpdateSuccess, setPinUpdateSuccess] = useState<string>('');
   const [showPinText, setShowPinText] = useState<boolean>(false);
 
   if (!isRoleModalOpen) return null;
 
-  const rolesList: UserRole[] = ['super_admin', 'accountant', 'data_entry'];
+  const rolesList: UserRole[] = ['super_admin', 'accountant', 'data_entry'].filter((role) =>
+    activeUserRoles.includes(role as UserRole)
+  ) as UserRole[];
 
   const permissionItems = [
     { key: 'canViewFinancialReports', label: 'الاطلاع على التقارير والقوائم المالية' },
@@ -93,9 +95,9 @@ export const RoleSwitcherModal: React.FC = () => {
       return;
     }
 
-    const res = updateRolePin(selectedRoleToUpdate, userPins[selectedRoleToUpdate], newPinValue);
+    const res = updateRolePin(selectedRoleToUpdate, '', newPinValue);
     if (res.success) {
-      setPinUpdateSuccess(`تم تغيير الرمز السري لحساب ${ROLES_CONFIG[selectedRoleToUpdate].nameAr} بنجاح إلى: ${newPinValue}`);
+      setPinUpdateSuccess(`تم تغيير الرمز السري لحساب ${ROLES_CONFIG[selectedRoleToUpdate].nameAr} بنجاح.`);
       setNewPinValue('');
     } else {
       setPinError(res.message);
@@ -185,9 +187,11 @@ export const RoleSwitcherModal: React.FC = () => {
                   onChange={(e) => setSelectedRoleToUpdate(e.target.value as UserRole)}
                   className="w-full p-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white text-xs outline-none"
                 >
-                  <option value="super_admin">المدير العام ({userProfiles.super_admin?.nameAr || 'صادق جعفر'})</option>
-                  <option value="accountant">مدير الحسابات ({userProfiles.accountant?.nameAr || 'حسين أحمد'})</option>
-                  <option value="data_entry">مدخل البيانات ({userProfiles.data_entry?.nameAr || 'مسؤول الموقع'})</option>
+                  {rolesList.map((role) => (
+                    <option key={role} value={role}>
+                      {ROLES_CONFIG[role].nameAr.split('(')[0]} ({userProfiles[role].nameAr})
+                    </option>
+                  ))}
                 </select>
               </div>
 
@@ -213,12 +217,9 @@ export const RoleSwitcherModal: React.FC = () => {
               </div>
             </form>
 
-            <div className="pt-2 border-t border-slate-800 text-[11px] text-slate-400 flex items-center justify-between">
-              <span>الرموز الحالية المشفرة في النظام:</span>
-              <span className="font-mono text-amber-400">
-                المدير: {userPins.super_admin} · المحاسب: {userPins.accountant} · الموقع: {userPins.data_entry}
-              </span>
-            </div>
+            <p className="pt-2 border-t border-slate-800 text-[11px] text-slate-400">
+              لأسباب أمنية لا يعرض النظام كلمات السر الحالية بعد حفظها.
+            </p>
           </div>
         )}
 

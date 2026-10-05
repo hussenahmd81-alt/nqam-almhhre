@@ -115,10 +115,9 @@ export const MobileBottomNavBar: React.FC = () => {
     },
     {
       id: 'settings',
-      label: 'إعدادات المدير',
+      label: currentRole === 'super_admin' ? 'إدارة الحسابات' : 'حسابي',
       icon: Settings,
-      allowed: currentRole === 'super_admin',
-      restrictedLabel: 'حصري للمدير العام فقط'
+      allowed: true
     },
     {
       id: 'audit',

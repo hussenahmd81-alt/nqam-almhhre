@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useErp } from '../../context/ErpContext';
 import { Project } from '../../types/erp';
+import { nonNegative, sumMoney } from '../../utils/financialUtils';
 import {
   Building2,
   Calendar,
@@ -16,7 +17,7 @@ import {
 } from 'lucide-react';
 
 export const ProjectsView: React.FC = () => {
-  const { projects, addProject, deleteProject, hasPermission } = useErp();
+  const { projects, cashVouchers, addProject, deleteProject, hasPermission } = useErp();
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [newProject, setNewProject] = useState({
     code: '',
@@ -106,7 +107,7 @@ export const ProjectsView: React.FC = () => {
           </div>
           <h3 className="text-lg font-bold text-white">لا توجد مشاريع مسجلة حالياً</h3>
           <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
-            تم تصفير النظام من السجلات والبيانات التجريبية بنجاح. يمكنك الآن البدء في تسجيل وتوثيق أول مشاريعك الهندسية والعقود الإنشائية.
+            النظام خالٍ من السجلات السابقة وجاهز. يمكنك الآن البدء في تسجيل وتوثيق أول مشاريعك الهندسية والعقود الإنشائية.
           </p>
           {canCreate && (
             <button
@@ -122,7 +123,11 @@ export const ProjectsView: React.FC = () => {
         /* Projects Grid */
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {projects.map((project) => {
-            const remainingBudget = project.totalBudget - project.spentAmount;
+            const recordedMovements = cashVouchers.filter(
+              (voucher) => voucher.type === 'cash_out' && voucher.projectId === project.id
+            );
+            const actualSpent = sumMoney([project.spentAmount, ...recordedMovements.map((voucher) => voucher.amount)]);
+            const remainingBudget = nonNegative(project.totalBudget - actualSpent);
             const isHighProgress = project.progressPercent >= 75;
 
             return (
@@ -196,17 +201,17 @@ export const ProjectsView: React.FC = () => {
                     <div>
                       <span className="text-slate-400 text-[11px] block">المصروف حتى تاريخه:</span>
                       <span className="font-mono font-bold text-amber-400 text-sm tabular-nums mt-0.5 block">
-                        {project.spentAmount.toLocaleString()} <span className="text-[10px] font-sans text-slate-400">د.ع</span>
+                        {actualSpent.toLocaleString()} <span className="text-[10px] font-sans text-slate-400">د.ع</span>
                       </span>
                     </div>
                   </div>
 
-                  {/* Confidential Margin Preview (Super Admin Only) */}
+                  {/* Confidential budget remainder (Super Admin Only) */}
                   {canViewConfidential && (
                     <div className="mt-3 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs flex items-center justify-between text-amber-300">
-                      <span className="font-semibold text-[11px]">هامش الربح التقديري (سري للمدير العام):</span>
+                      <span className="font-semibold text-[11px]">المتبقي من قيمة العقد (سري للمدير العام):</span>
                       <span className="font-mono font-bold tabular-nums">
-                        +{Math.round(remainingBudget * 0.35).toLocaleString()} د.ع
+                        {remainingBudget.toLocaleString()} د.ع
                       </span>
                     </div>
                   )}
@@ -253,7 +258,7 @@ export const ProjectsView: React.FC = () => {
                   <input
                     type="text"
                     required
-                    placeholder="مثال: برج لمسات المعمار"
+                    placeholder="أدخل اسم المشروع"
                     value={newProject.nameAr}
                     onChange={(e) => setNewProject({ ...newProject, nameAr: e.target.value })}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white focus:border-amber-500 outline-none"
@@ -263,7 +268,7 @@ export const ProjectsView: React.FC = () => {
                   <label className="block text-slate-300 font-semibold mb-1">رمز المشروع (Code)</label>
                   <input
                     type="text"
-                    placeholder="مثال: LM-TOWER"
+                    placeholder="اختياري - يولّد تلقائياً"
                     value={newProject.code}
                     onChange={(e) => setNewProject({ ...newProject, code: e.target.value })}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white focus:border-amber-500 outline-none font-mono"
@@ -276,7 +281,7 @@ export const ProjectsView: React.FC = () => {
                   <label className="block text-slate-300 font-semibold mb-1">العميل / الجهة المالكة</label>
                   <input
                     type="text"
-                    placeholder="مثال: شركة التطوير العقاري"
+                    placeholder="اسم العميل أو الجهة"
                     value={newProject.clientName}
                     onChange={(e) => setNewProject({ ...newProject, clientName: e.target.value })}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white focus:border-amber-500 outline-none"
@@ -286,7 +291,7 @@ export const ProjectsView: React.FC = () => {
                   <label className="block text-slate-300 font-semibold mb-1">الموقع / المدينة</label>
                   <input
                     type="text"
-                    placeholder="مثال: الرياض - حي الملقا"
+                    placeholder="موقع المشروع"
                     value={newProject.location}
                     onChange={(e) => setNewProject({ ...newProject, location: e.target.value })}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-white focus:border-amber-500 outline-none"
@@ -307,7 +312,7 @@ export const ProjectsView: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-slate-300 font-semibold mb-1">المصروف الفعلي (د.ع)</label>
+                  <label className="block text-slate-300 font-semibold mb-1">مصروف سابق قبل النظام (د.ع)</label>
                   <input
                     type="number"
                     min="0"

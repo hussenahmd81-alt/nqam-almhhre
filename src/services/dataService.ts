@@ -28,7 +28,7 @@ export const ROLES_CONFIG: Record<string, RoleConfig> = {
     id: 'super_admin',
     nameAr: 'المدير العام (Super Admin)',
     nameEn: 'General Manager',
-    titleAr: 'صادق جعفر - المدير العام والمؤسس (الإدارة العليا والقرارات الاستراتيجية)',
+    titleAr: 'المدير العام والمؤسس (الإدارة العليا والقرارات الاستراتيجية)',
     descriptionAr: 'وصول كامل وشامل لجميع التقارير المالية السرية، الأرباح، التراخيص، وإدارة الصلاحيات وسجلات الأمان.',
     badgeColor: 'border-amber-500/50 bg-amber-500/10 text-amber-400',
     canViewFinancialReports: true,
@@ -46,7 +46,7 @@ export const ROLES_CONFIG: Record<string, RoleConfig> = {
     id: 'accountant',
     nameAr: 'المحاسب المالي (Accountant)',
     nameEn: 'Financial Accountant',
-    titleAr: 'أ. حسام المالي - إدارة الحسابات والصندوق والمستخلصات',
+    titleAr: 'إدارة الحسابات والصندوق والمستخلصات',
     descriptionAr: 'إدخال ومراجعة الفواتير، حسابات المقاولين، الصندوق والعهد. محظور من حذف السجلات أو تعديل التراخيص أو كشف هوامش أرباح الشركة.',
     badgeColor: 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400',
     canViewFinancialReports: true,
@@ -64,7 +64,7 @@ export const ROLES_CONFIG: Record<string, RoleConfig> = {
     id: 'data_entry',
     nameAr: 'مدخل بيانات / كادر الموقع (Data Entry)',
     nameEn: 'Site Data Entry / Field Staff',
-    titleAr: 'م. سامي الميداني - الرصد الميداني وسجلات الآليات',
+    titleAr: 'الرصد الميداني وسجلات الآليات',
     descriptionAr: 'صلاحيات مقتصرة على تسجيل يوميات الموقع، استهلاك وقود المعدات والصرفيات الميدانية دون وصول للحسابات والتقارير العامة.',
     badgeColor: 'border-sky-500/50 bg-sky-500/10 text-sky-400',
     canViewFinancialReports: false,
@@ -86,8 +86,8 @@ export const USER_PROFILES: Record<UserRole, UserProfile> = {
     nameAr: 'صادق جعفر',
     role: 'super_admin',
     title: 'المدير العام والمؤسس',
-    email: 'sadiq.jaafar@lamasat-almeamar.sa',
-    phone: '+964 77 1234 5678',
+    email: '',
+    phone: '',
     avatarLetter: 'ص',
     branch: 'المقر العام - بغداد'
   },
@@ -96,8 +96,8 @@ export const USER_PROFILES: Record<UserRole, UserProfile> = {
     nameAr: 'حسين احمد',
     role: 'accountant',
     title: 'مدير الحسابات والمالية',
-    email: 'hussain.ahmed@lamasat-almeamar.sa',
-    phone: '+964 78 1234 5678',
+    email: '',
+    phone: '',
     avatarLetter: 'ح',
     branch: 'الإدارة المالية والمحاسبة'
   },
@@ -106,8 +106,8 @@ export const USER_PROFILES: Record<UserRole, UserProfile> = {
     nameAr: 'مسؤول الموقع والبيانات',
     role: 'data_entry',
     title: 'مهندس الموقع ومسؤول تشغيل الآليات',
-    email: 'site@lamasat-almeamar.sa',
-    phone: '+964 75 1234 5678',
+    email: '',
+    phone: '',
     avatarLetter: 'م',
     branch: 'موقع المشاريع'
   }
@@ -122,18 +122,15 @@ export const DEFAULT_ROLE_PINS: Record<UserRole, string> = {
 export const COMPANY_BILLING_INFO = {
   nameAr: 'شركة لمسات المعمار للمقاولات والاستشارات الهندسية',
   nameEn: 'Lamasat Al-Meamar Contracting & Engineering Consultancy',
-  commercialReg: '1010884920',
-  vatNumber: '310294857200003',
-  address: 'بغداد - المنصور - شارع 14 رمضان، جمهورية العراق',
-  phone: '+964 77 1234 5678',
-  mobile: '+964 78 1234 5678',
-  email: 'finance@lamasat-almeamar.iq',
-  website: 'www.lamasat-almeamar.iq',
+  commercialReg: '',
+  vatNumber: '',
+  address: '',
+  phone: '',
+  mobile: '',
+  email: '',
+  website: '',
   currency: 'د.ع',
-  bankDetails: [
-    { bankName: 'المصرف العراقي للتجارة (TBI)', iban: 'IQ98TRIQ0000000000123456789', swift: 'TRIQIQBA' },
-    { bankName: 'مصرف بغداد', iban: 'IQ35BBOB0000000000987654321', swift: 'BBOBIQBA' }
-  ]
+  bankDetails: [] as Array<{ bankName: string; iban: string; swift: string }>
 };
 
 export const CASH_IN_CATEGORIES = [
@@ -156,20 +153,7 @@ export const CASH_OUT_CATEGORIES = [
 export const INITIAL_PROJECTS: Project[] = [];
 export const INITIAL_TRANSACTIONS: FinancialTransaction[] = [];
 export const INITIAL_SITE_LOGS: SiteOperationLog[] = [];
-export const INITIAL_AUDIT_LOGS: AuditLog[] = [
-  {
-    id: 'AUD-001',
-    timestamp: '2026-09-23 12:00:00',
-    userId: 'USR-001',
-    userName: 'صادق جعفر',
-    userRole: 'super_admin',
-    action: 'تصفير وتهيئة النظام للتشغيل الفعلي النظيف',
-    category: 'security',
-    severity: 'info',
-    ipAddress: '127.0.0.1 (الخادم المركزي)',
-    details: 'تم تصفير كافة الأرقام والأسماء الوهمية، وتهيئة المنظومة لاستقبال البيانات التشغيلية الحقيقية.'
-  }
-];
+export const INITIAL_AUDIT_LOGS: AuditLog[] = [];
 export const INITIAL_CASH_VOUCHERS: CashVoucher[] = [];
 export const INITIAL_SAFE_REGISTERS: DailySafeRegister[] = [];
 export const INITIAL_INVOICES: Invoice[] = [];

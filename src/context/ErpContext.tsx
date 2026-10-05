@@ -1,4 +1,6 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useMemo, useRef } from 'react';
+import { ConvexHttpClient } from 'convex/browser';
+import { makeFunctionReference } from 'convex/server';
 import {
   UserRole,
   RoleConfig,
@@ -53,17 +55,34 @@ import {
   DEFAULT_ROLE_PINS
 } from '../services/dataService';
 import { getStoredLicense, saveStoredLicense, verifyLicenseKey, DEFAULT_LICENSE } from '../services/licenseService';
-import { roundMoney, generateZatcaQrData } from '../utils/financialUtils';
+import {
+  roundMoney,
+  nonNegative,
+  calculateCashTotals,
+  calculateInvoiceTotals,
+  calculateInvoicePayment,
+  calculateEmployeePackage,
+  calculateMonthlySalary,
+  calculateWeeklyWorkerPay,
+  calculateWeeklyTotals,
+  calculateQuantityTotal,
+  calculateFuelMetrics,
+  calculateLedgerBalance,
+  generateZatcaQrData
+} from '../utils/financialUtils';
 
 interface ErpContextType {
+  cloudSyncStatus: 'disabled' | 'loading' | 'saving' | 'synced' | 'error';
   isAuthenticated: boolean;
   loginWithPin: (role: UserRole, pin: string) => { success: boolean; message: string };
   logout: () => void;
   switchRoleWithPin: (targetRole: UserRole, pin: string) => { success: boolean; message: string };
   updateRolePin: (targetRole: UserRole, currentOrAdminPin: string, newPin: string) => { success: boolean; message: string };
-  userPins: Record<UserRole, string>;
   userProfiles: Record<UserRole, UserProfile>;
+  activeUserRoles: UserRole[];
   updateUserProfile: (role: UserRole, nameAr: string, title?: string) => { success: boolean; message: string };
+  deleteUserAccount: (role: UserRole) => { success: boolean; message: string };
+  restoreUserAccount: (role: UserRole) => { success: boolean; message: string };
   currentRole: UserRole;
   roleConfig: RoleConfig;
   currentUser: UserProfile;
@@ -172,9 +191,42 @@ interface ErpContextType {
   setIsRoleModalOpen: (open: boolean) => void;
 }
 
+type CloudCollection = {
+  collection: string;
+  data: unknown;
+  revision: number;
+  updatedAt: number;
+};
+
+const CONVEX_URL = import.meta.env.VITE_CONVEX_URL?.trim();
+const CLOUD_WORKSPACE = 'lamasat-main';
+const convexClient = CONVEX_URL ? new ConvexHttpClient(CONVEX_URL) : null;
+const loadCloudCollections = makeFunctionReference<
+  'query',
+  { workspace: string },
+  CloudCollection[]
+>('erpState:loadAll');
+const saveCloudCollection = makeFunctionReference<
+  'mutation',
+  {
+    workspace: string;
+    collection: string;
+    data: unknown;
+    expectedRevision?: number;
+  },
+  { revision: number; updatedAt: number }
+>('erpState:saveCollection');
+
 const ErpContext = createContext<ErpContextType | undefined>(undefined);
 
 export const ErpProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const [cloudSyncStatus, setCloudSyncStatus] = useState<'disabled' | 'loading' | 'saving' | 'synced' | 'error'>(
+    convexClient ? 'loading' : 'disabled'
+  );
+  const [cloudHydrated, setCloudHydrated] = useState(false);
+  const cloudLoadStartedRef = useRef(false);
+  const cloudRevisionsRef = useRef<Record<string, number>>({});
+  const cloudSerializedRef = useRef<Record<string, string>>({});
   // Stored PINs for roles (can be updated by Super Admin)
   const [userPins, setUserPins] = useState<Record<UserRole, string>>(() => {
     try {
@@ -191,6 +243,18 @@ export const ErpProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       if (stored) return JSON.parse(stored);
     } catch {}
     return USER_PROFILES;
+  });
+
+  const [activeUserRoles, setActiveUserRoles] = useState<UserRole[]>(() => {
+    try {
+      const stored = localStorage.getItem('lamasat_active_user_roles');
+      if (stored) {
+        const parsed = JSON.parse(stored) as UserRole[];
+        const validRoles = parsed.filter((role) => role in USER_PROFILES);
+        if (validRoles.includes('super_admin')) return validRoles;
+      }
+    } catch {}
+    return ['super_admin', 'accountant', 'data_entry'];
   });
 
   // Current authenticated user role - stored per-device session
@@ -257,6 +321,136 @@ export const ErpProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [rentalWorkLogs, setRentalWorkLogs] = useState<RentalWorkLog[]>(INITIAL_RENTAL_WORK_LOGS);
   const [rentalPayments, setRentalPayments] = useState<RentalPayment[]>(INITIAL_RENTAL_PAYMENTS);
 
+  const cloudCollections = useMemo<Record<string, unknown>>(
+    () => ({
+      projects,
+      transactions,
+      siteLogs,
+      cashVouchers,
+      dailyRegisters,
+      openingBalance,
+      invoices,
+      employees,
+      salarySlips,
+      projectWorkers,
+      weeklyTimesheets,
+      procurements,
+      fuelLogs,
+      officeExpenses,
+      vendors,
+      vendorTransactions,
+      rentalMachinery,
+      rentalWorkLogs,
+      rentalPayments,
+      auditLogs,
+      userProfiles,
+      activeUserRoles
+    }),
+    [
+      projects,
+      transactions,
+      siteLogs,
+      cashVouchers,
+      dailyRegisters,
+      openingBalance,
+      invoices,
+      employees,
+      salarySlips,
+      projectWorkers,
+      weeklyTimesheets,
+      procurements,
+      fuelLogs,
+      officeExpenses,
+      vendors,
+      vendorTransactions,
+      rentalMachinery,
+      rentalWorkLogs,
+      rentalPayments,
+      auditLogs,
+      userProfiles,
+      activeUserRoles
+    ]
+  );
+
+  useEffect(() => {
+    if (!convexClient || cloudLoadStartedRef.current) return;
+    cloudLoadStartedRef.current = true;
+    setCloudSyncStatus('loading');
+
+    convexClient
+      .query(loadCloudCollections, { workspace: CLOUD_WORKSPACE })
+      .then((rows) => {
+        for (const row of rows) {
+          cloudRevisionsRef.current[row.collection] = row.revision;
+          cloudSerializedRef.current[row.collection] = JSON.stringify(row.data);
+
+          switch (row.collection) {
+            case 'projects': setProjects(row.data as Project[]); break;
+            case 'transactions': setTransactions(row.data as FinancialTransaction[]); break;
+            case 'siteLogs': setSiteLogs(row.data as SiteOperationLog[]); break;
+            case 'cashVouchers': setCashVouchers(row.data as CashVoucher[]); break;
+            case 'dailyRegisters': setDailyRegisters(row.data as DailySafeRegister[]); break;
+            case 'openingBalance': setOpeningBalance(nonNegative(row.data as number)); break;
+            case 'invoices': setInvoices(row.data as Invoice[]); break;
+            case 'employees': setEmployees(row.data as Employee[]); break;
+            case 'salarySlips': setSalarySlips(row.data as MonthlySalarySlip[]); break;
+            case 'projectWorkers': setProjectWorkers(row.data as ProjectWorker[]); break;
+            case 'weeklyTimesheets': setWeeklyTimesheets(row.data as WeeklyLaborTimesheet[]); break;
+            case 'procurements': setProcurements(row.data as DailyProcurementItem[]); break;
+            case 'fuelLogs': setFuelLogs(row.data as FuelFleetLog[]); break;
+            case 'officeExpenses': setOfficeExpenses(row.data as OfficeOverheadExpense[]); break;
+            case 'vendors': setVendors(row.data as SubcontractorVendor[]); break;
+            case 'vendorTransactions': setVendorTransactions(row.data as VendorTransaction[]); break;
+            case 'rentalMachinery': setRentalMachinery(row.data as RentalMachinery[]); break;
+            case 'rentalWorkLogs': setRentalWorkLogs(row.data as RentalWorkLog[]); break;
+            case 'rentalPayments': setRentalPayments(row.data as RentalPayment[]); break;
+            case 'auditLogs': setAuditLogs(row.data as AuditLog[]); break;
+            case 'userProfiles': setUserProfiles(row.data as Record<UserRole, UserProfile>); break;
+            case 'activeUserRoles': setActiveUserRoles(row.data as UserRole[]); break;
+          }
+        }
+        setCloudHydrated(true);
+        setCloudSyncStatus('synced');
+      })
+      .catch(() => {
+        setCloudSyncStatus('error');
+      });
+  }, []);
+
+  useEffect(() => {
+    if (!convexClient || !cloudHydrated) return;
+
+    const pending = Object.entries(cloudCollections)
+      .map(([collection, data]) => ({ collection, data, serialized: JSON.stringify(data) }))
+      .filter(({ collection, serialized }) => cloudSerializedRef.current[collection] !== serialized);
+
+    if (pending.length === 0) {
+      setCloudSyncStatus('synced');
+      return;
+    }
+
+    const timer = window.setTimeout(async () => {
+      setCloudSyncStatus('saving');
+      try {
+        for (const item of pending) {
+          const result = await convexClient.mutation(saveCloudCollection, {
+            workspace: CLOUD_WORKSPACE,
+            collection: item.collection,
+            data: item.data,
+            expectedRevision: cloudRevisionsRef.current[item.collection] ?? 0
+          });
+          cloudRevisionsRef.current[item.collection] = result.revision;
+          cloudSerializedRef.current[item.collection] = item.serialized;
+        }
+        setCloudSyncStatus('synced');
+      } catch {
+        setCloudSyncStatus('error');
+      }
+    }, 800);
+
+    return () => window.clearTimeout(timer);
+  }, [cloudCollections, cloudHydrated]);
+
   // Sync stored license
   useEffect(() => {
     saveStoredLicense(license);
@@ -292,7 +486,7 @@ export const ErpProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       action,
       category,
       severity,
-      ipAddress: currentRole === 'super_admin' ? '192.168.1.10 (المكتب التنفيذي)' : currentRole === 'accountant' ? '192.168.1.24 (الإدارة المالية)' : '10.0.4.18 (مكتب الموقع)',
+      ipAddress: 'جلسة محلية - بانتظار ربط قاعدة البيانات',
       details,
       diff
     };
@@ -305,6 +499,9 @@ export const ErpProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const loginWithPin = (role: UserRole, pin: string): { success: boolean; message: string } => {
+    if (!activeUserRoles.includes(role)) {
+      return { success: false, message: 'هذا الحساب محذوف أو غير نشط.' };
+    }
     const expectedPin = userPins[role];
     const roleProfile = userProfiles[role] || USER_PROFILES[role];
     if (pin.trim() === expectedPin) {
@@ -329,7 +526,7 @@ export const ErpProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         'محاولة دخول فاشلة برمز PIN خاطئ',
         'security',
         'warning',
-        `محاولة دخول غير مصرح بها لحساب [${roleProfile.nameAr}] برمز خاطئ (${pin}).`
+        `محاولة دخول غير مصرح بها لحساب [${roleProfile.nameAr}] برمز خاطئ دون حفظ قيمة الرمز.`
       );
       showNotification('فشل تسجيل الدخول', 'الرمز السري (PIN) المدخل غير صحيح! تم تقييد الدخول.', 'error');
       return { success: false, message: 'الرمز السري (PIN) غير صحيح.' };
@@ -337,6 +534,9 @@ export const ErpProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const switchRoleWithPin = (targetRole: UserRole, pin: string): { success: boolean; message: string } => {
+    if (!activeUserRoles.includes(targetRole)) {
+      return { success: false, message: 'هذا الحساب محذوف أو غير نشط.' };
+    }
     if (targetRole === currentRole) {
       return { success: true, message: 'أنت بهذا الدور حالياً.' };
     }
@@ -395,6 +595,10 @@ export const ErpProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const isAdmin = currentRole === 'super_admin';
     const isOwner = userPins[targetRole] === currentOrAdminPin;
 
+    if (!isAdmin && targetRole !== currentRole) {
+      return { success: false, message: 'يمكنك تعديل كلمة سر حسابك فقط.' };
+    }
+
     if (!isAdmin && !isOwner) {
       return { success: false, message: 'ليس لديك صلاحية لتعديل هذا الرمز، أو الرمز الحالي غير صحيح.' };
     }
@@ -424,6 +628,14 @@ export const ErpProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     nameAr: string,
     title?: string
   ): { success: boolean; message: string } => {
+    if (currentRole !== 'super_admin' && role !== currentRole) {
+      return { success: false, message: 'يمكنك تعديل بيانات حسابك فقط.' };
+    }
+
+    if (!activeUserRoles.includes(role)) {
+      return { success: false, message: 'الحساب محذوف. أعد تفعيله أولاً.' };
+    }
+
     if (!nameAr.trim()) {
       return { success: false, message: 'لا يمكن ترك الاسم فارغاً.' };
     }
@@ -453,6 +665,63 @@ export const ErpProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     );
     showNotification('تم تحديث الاسم', `تم حفظ الاسم الجديد: ${trimmedName}`);
     return { success: true, message: 'تم تحديث الاسم بنجاح.' };
+  };
+
+  const saveActiveRoles = (roles: UserRole[]) => {
+    setActiveUserRoles(roles);
+    try {
+      localStorage.setItem('lamasat_active_user_roles', JSON.stringify(roles));
+    } catch {}
+  };
+
+  const deleteUserAccount = (role: UserRole): { success: boolean; message: string } => {
+    if (role === 'super_admin') {
+      return { success: false, message: 'لا يمكن حذف حساب المدير العام لأنه حساب الاسترداد والإدارة الوحيد.' };
+    }
+    if (currentRole !== 'super_admin' && currentRole !== role) {
+      return { success: false, message: 'لا تملك صلاحية حذف هذا الحساب.' };
+    }
+    if (!activeUserRoles.includes(role)) {
+      return { success: false, message: 'الحساب محذوف بالفعل.' };
+    }
+
+    const targetName = userProfiles[role].nameAr;
+    const nextRoles = activeUserRoles.filter((activeRole) => activeRole !== role);
+    addAuditLog(
+      'حذف حساب مستخدم من بوابة الدخول',
+      'security',
+      'critical',
+      `تم حذف حساب [${targetName}] وتعطيل دخوله بواسطة [${currentUser.nameAr}].`
+    );
+    saveActiveRoles(nextRoles);
+
+    if (currentRole === role) {
+      try {
+        sessionStorage.removeItem('lamasat_auth_user');
+      } catch {}
+      setIsAuthenticated(false);
+    }
+
+    showNotification('تم حذف الحساب', `تم حذف حساب ${targetName} من شاشة الدخول.`, 'warning');
+    return { success: true, message: 'تم حذف الحساب بنجاح.' };
+  };
+
+  const restoreUserAccount = (role: UserRole): { success: boolean; message: string } => {
+    if (currentRole !== 'super_admin') {
+      return { success: false, message: 'إعادة تفعيل الحسابات متاحة للمدير العام فقط.' };
+    }
+    if (activeUserRoles.includes(role)) {
+      return { success: false, message: 'الحساب نشط بالفعل.' };
+    }
+    saveActiveRoles([...activeUserRoles, role]);
+    addAuditLog(
+      'إعادة تفعيل حساب مستخدم',
+      'security',
+      'warning',
+      `تمت إعادة تفعيل حساب [${userProfiles[role].nameAr}] بواسطة [${currentUser.nameAr}].`
+    );
+    showNotification('تمت إعادة التفعيل', `عاد حساب ${userProfiles[role].nameAr} إلى شاشة الدخول.`);
+    return { success: true, message: 'تمت إعادة تفعيل الحساب.' };
   };
 
   const setRole = (newRole: UserRole) => {
@@ -571,9 +840,15 @@ export const ErpProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       showNotification('غير مصرح', 'لا تملك صلاحية إنشاء فواتير أو مستخلصات مالية.', 'error');
       return false;
     }
+    if (!tx.projectId || !tx.recipientName.trim() || nonNegative(tx.amount) <= 0) {
+      showNotification('بيانات المعاملة ناقصة', 'اختر مشروعًا وأدخل اسم المستفيد ومبلغًا أكبر من صفر.', 'error');
+      return false;
+    }
 
     const newTx: FinancialTransaction = {
       ...tx,
+      amount: nonNegative(tx.amount),
+      vatAmount: nonNegative(tx.vatAmount),
       id: `TX-${Date.now().toString().slice(-4)}`,
       createdBy: currentUser.nameAr
     };
@@ -664,25 +939,22 @@ export const ErpProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // --- Task 3: Cash Flow & Safe Management Computations & Actions ---
   const { totalCashIn, totalCashOut, liveSafeBalance } = useMemo(() => {
-    let inSum = 0;
-    let outSum = 0;
-    for (const v of cashVouchers) {
-      if (v.type === 'cash_in') inSum += v.amount;
-      if (v.type === 'cash_out') outSum += v.amount;
-    }
-    const roundedIn = roundMoney(inSum);
-    const roundedOut = roundMoney(outSum);
-    const net = roundMoney(openingBalance + roundedIn - roundedOut);
-    return {
-      totalCashIn: roundedIn,
-      totalCashOut: roundedOut,
-      liveSafeBalance: net
-    };
+    return calculateCashTotals(openingBalance, cashVouchers);
   }, [cashVouchers, openingBalance]);
 
   const addCashVoucher = (voucher: Omit<CashVoucher, 'id' | 'voucherNumber' | 'time' | 'recordedBy'>): boolean => {
     if (!hasPermission('canCreateInvoice') && !hasPermission('canApproveSubcontractorPayment')) {
       showNotification('غير مصرح', 'ليس لديك صلاحية قيد سندات الصندوق والخزينة.', 'error');
+      return false;
+    }
+
+    const amount = nonNegative(voucher.amount);
+    if (amount <= 0) {
+      showNotification('قيمة غير صحيحة', 'يجب أن يكون مبلغ السند أكبر من صفر.', 'error');
+      return false;
+    }
+    if (voucher.type === 'cash_out' && voucher.paymentMethod === 'cash' && amount > liveSafeBalance) {
+      showNotification('رصيد الصندوق غير كافٍ', `الرصيد النقدي المتاح هو ${liveSafeBalance.toLocaleString()} د.ع.`, 'error');
       return false;
     }
 
@@ -694,6 +966,7 @@ export const ErpProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const newVoucher: CashVoucher = {
       ...voucher,
+      amount,
       id: `VCH-${voucher.type === 'cash_in' ? 'IN' : 'OUT'}-${Date.now().toString().slice(-4)}`,
       voucherNumber,
       time: timeStr,
@@ -791,6 +1064,23 @@ export const ErpProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return false;
     }
 
+    if (!inv.clientName.trim() || inv.items.length === 0 || inv.items.some((item) => !item.description.trim())) {
+      showNotification('بيانات الفاتورة ناقصة', 'أدخل اسم الطرف ووصف كل بند قبل الحفظ.', 'error');
+      return false;
+    }
+
+    const totals = calculateInvoiceTotals(inv.items, inv.discountPercent, inv.taxRate);
+    if (totals.grandTotal <= 0) {
+      showNotification('قيمة غير صحيحة', 'يجب أن يكون إجمالي الفاتورة أكبر من صفر.', 'error');
+      return false;
+    }
+    const normalizedItems = inv.items.map((item) => ({
+      ...item,
+      quantity: nonNegative(item.quantity),
+      unitPrice: nonNegative(item.unitPrice),
+      total: calculateQuantityTotal(item.quantity, item.unitPrice)
+    }));
+
     const seq = Math.floor(1000 + Math.random() * 9000);
     const invoiceNumber = `INV-LM-2026-${seq}`;
     const timestamp = new Date().toISOString();
@@ -799,12 +1089,22 @@ export const ErpProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       COMPANY_BILLING_INFO.nameAr,
       COMPANY_BILLING_INFO.vatNumber,
       timestamp,
-      inv.grandTotal,
-      inv.taxAmount
+      totals.grandTotal,
+      totals.taxAmount
     );
 
     const newInvoice: Invoice = {
       ...inv,
+      items: normalizedItems,
+      subtotal: totals.subtotal,
+      discountPercent: totals.discountPercent,
+      discountAmount: totals.discountAmount,
+      taxRate: totals.taxRate,
+      taxAmount: totals.taxAmount,
+      grandTotal: totals.grandTotal,
+      paidAmount: 0,
+      remainingAmount: totals.grandTotal,
+      status: 'pending',
       id: `INV-${Date.now().toString().slice(-4)}`,
       invoiceNumber,
       createdBy: currentUser.nameAr,
@@ -817,7 +1117,7 @@ export const ErpProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       `إصدار فاتورة جديدة (${invoiceNumber})`,
       'financial',
       'info',
-      `تم إصدار ${inv.type === 'sales' ? 'فاتورة مستخلص مبيعات' : 'فاتورة شراء وتوريد'} بقيمة إجمالية ${inv.grandTotal.toLocaleString()} د.ع للعميل/المورد [${inv.clientName}].`
+      `تم إصدار ${inv.type === 'sales' ? 'فاتورة مستخلص مبيعات' : 'فاتورة شراء وتوريد'} بقيمة إجمالية ${totals.grandTotal.toLocaleString()} د.ع للعميل/المورد [${inv.clientName}].`
     );
 
     showNotification('تم إصدار الفاتورة', `تم إنشاء الفاتورة رقم ${invoiceNumber} وتوليد رمز ZATCA المعتمد بنجاح.`, 'success');
@@ -835,19 +1135,13 @@ export const ErpProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setInvoices((prev) =>
       prev.map((inv) => {
         if (inv.id === id) {
-          const newPaid = paidAmount !== undefined ? roundMoney(paidAmount) : inv.paidAmount;
-          const newRemaining = roundMoney(Math.max(0, inv.grandTotal - newPaid));
-          let finalStatus = status;
-          if (newRemaining <= 0) {
-            finalStatus = 'paid';
-          } else if (newPaid > 0) {
-            finalStatus = 'partially_paid';
-          }
+          const requestedPaid = paidAmount !== undefined ? paidAmount : inv.paidAmount;
+          const payment = calculateInvoicePayment(inv.grandTotal, requestedPaid);
           updatedInv = {
             ...inv,
-            paidAmount: newPaid,
-            remainingAmount: newRemaining,
-            status: finalStatus
+            paidAmount: payment.paidAmount,
+            remainingAmount: payment.remainingAmount,
+            status: status === 'cancelled' ? 'cancelled' : payment.status
           };
           return updatedInv;
         }
@@ -903,6 +1197,16 @@ export const ErpProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const newCode = `LM-${empData.department.toUpperCase().substring(0, 3)}-${String(employees.length + 1).padStart(2, '0')}`;
     const newEmp: Employee = {
       ...empData,
+      basicSalary: nonNegative(empData.basicSalary),
+      housingAllowance: nonNegative(empData.housingAllowance),
+      transportAllowance: nonNegative(empData.transportAllowance),
+      otherAllowances: nonNegative(empData.otherAllowances),
+      totalMonthlyPackage: calculateEmployeePackage(
+        empData.basicSalary,
+        empData.housingAllowance,
+        empData.transportAllowance,
+        empData.otherAllowances
+      ),
       id: newId,
       code: newCode
     };
@@ -920,8 +1224,19 @@ export const ErpProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const addSalarySlip = (slipData: Omit<MonthlySalarySlip, 'id' | 'slipNumber'>): boolean => {
     const slipId = `SLIP-${Date.now()}`;
     const slipNumber = `PAY-${slipData.monthYear}-${String(salarySlips.length + 1).padStart(3, '0')}`;
+    const salaryTotals = calculateMonthlySalary(slipData);
     const newSlip: MonthlySalarySlip = {
       ...slipData,
+      basicSalary: nonNegative(slipData.basicSalary),
+      totalAllowances: nonNegative(slipData.totalAllowances),
+      overtimeHours: nonNegative(slipData.overtimeHours),
+      overtimeAmount: nonNegative(slipData.overtimeAmount),
+      bonuses: nonNegative(slipData.bonuses),
+      advancesDeduction: nonNegative(slipData.advancesDeduction),
+      absenceDays: nonNegative(slipData.absenceDays),
+      absenceDeduction: nonNegative(slipData.absenceDeduction),
+      penaltiesDeduction: nonNegative(slipData.penaltiesDeduction),
+      netPayable: salaryTotals.netPayable,
       id: slipId,
       slipNumber
     };
@@ -979,6 +1294,7 @@ export const ErpProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const newCode = `LAB-${String(100 + projectWorkers.length + 1)}`;
     const newWorker: ProjectWorker = {
       ...workerData,
+      dailyRate: nonNegative(workerData.dailyRate),
       id: newId,
       code: newCode
     };
@@ -998,27 +1314,25 @@ export const ErpProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         if (ts.id !== timesheetId) return ts;
         const newEntries = ts.entries.map((entry) => {
           if (entry.workerId !== workerId) return entry;
-          const updatedDays = { ...entry.days, [day]: value };
-          const totalDays = Object.values(updatedDays).reduce((sum, val) => sum + Number(val || 0), 0);
-          const totalEarned = roundMoney(totalDays * entry.dailyRate + entry.overtimeAmount);
-          const netPayable = roundMoney(Math.max(0, totalEarned - entry.advances));
+          const updatedDays = { ...entry.days, [day]: Math.min(1, nonNegative(value)) };
+          const calculated = calculateWeeklyWorkerPay({
+            days: Object.values(updatedDays),
+            dailyRate: entry.dailyRate,
+            overtimeHours: entry.overtimeHours,
+            overtimeRate: entry.overtimeRate,
+            advances: entry.advances
+          });
           return {
             ...entry,
             days: updatedDays,
-            totalDays,
-            totalEarned,
-            netPayable
+            ...calculated
           };
         });
-        const totalWeeklyGross = roundMoney(newEntries.reduce((acc, curr) => acc + curr.totalEarned, 0));
-        const totalWeeklyAdvances = roundMoney(newEntries.reduce((acc, curr) => acc + curr.advances, 0));
-        const totalWeeklyNetPayable = roundMoney(newEntries.reduce((acc, curr) => acc + curr.netPayable, 0));
+        const weeklyTotals = calculateWeeklyTotals(newEntries);
         return {
           ...ts,
           entries: newEntries,
-          totalWeeklyGross,
-          totalWeeklyAdvances,
-          totalWeeklyNetPayable
+          ...weeklyTotals
         };
       })
     );
@@ -1035,27 +1349,23 @@ export const ErpProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         if (ts.id !== timesheetId) return ts;
         const newEntries = ts.entries.map((entry) => {
           if (entry.workerId !== workerId) return entry;
-          const overtimeAmount = roundMoney(overtimeHours * entry.overtimeRate);
-          const totalEarned = roundMoney(entry.totalDays * entry.dailyRate + overtimeAmount);
-          const netPayable = roundMoney(Math.max(0, totalEarned - advances));
+          const calculated = calculateWeeklyWorkerPay({
+            days: Object.values(entry.days),
+            dailyRate: entry.dailyRate,
+            overtimeHours,
+            overtimeRate: entry.overtimeRate,
+            advances
+          });
           return {
             ...entry,
-            overtimeHours,
-            overtimeAmount,
-            advances,
-            totalEarned,
-            netPayable
+            ...calculated
           };
         });
-        const totalWeeklyGross = roundMoney(newEntries.reduce((acc, curr) => acc + curr.totalEarned, 0));
-        const totalWeeklyAdvances = roundMoney(newEntries.reduce((acc, curr) => acc + curr.advances, 0));
-        const totalWeeklyNetPayable = roundMoney(newEntries.reduce((acc, curr) => acc + curr.netPayable, 0));
+        const weeklyTotals = calculateWeeklyTotals(newEntries);
         return {
           ...ts,
           entries: newEntries,
-          totalWeeklyGross,
-          totalWeeklyAdvances,
-          totalWeeklyNetPayable
+          ...weeklyTotals
         };
       })
     );
@@ -1066,6 +1376,10 @@ export const ErpProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!timesheet) return false;
     if (timesheet.status === 'paid') {
       showNotification('تنبيه', 'تم صرف هذا الكشف مسبقاً.', 'warning');
+      return false;
+    }
+    if (timesheet.totalWeeklyNetPayable > liveSafeBalance) {
+      showNotification('رصيد الصندوق غير كافٍ', `المتاح ${liveSafeBalance.toLocaleString()} د.ع ولا يغطي صافي الأجور.`, 'error');
       return false;
     }
 
@@ -1117,33 +1431,42 @@ export const ErpProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   // -------------------------------------------------------------
 
   const addProcurementItem = (itemData: Omit<DailyProcurementItem, 'id' | 'purchaseNumber' | 'recordedBy'>): boolean => {
+    const totalCost = calculateQuantityTotal(itemData.quantity, itemData.unitPrice);
+    if (!itemData.itemName.trim() || !itemData.supplierShop.trim() || totalCost <= 0) {
+      showNotification('بيانات المشتريات ناقصة', 'أدخل الصنف والمورد وكمية وسعرًا أكبر من صفر.', 'error');
+      return false;
+    }
+    if (itemData.paymentMethod === 'cash_safe' && totalCost > liveSafeBalance) {
+      showNotification('رصيد الصندوق غير كافٍ', `المتاح ${liveSafeBalance.toLocaleString()} د.ع.`, 'error');
+      return false;
+    }
     const newId = `PUR-${Date.now()}`;
     const newNumber = `PUR-${new Date().getFullYear()}-${String(procurements.length + 1).padStart(4, '0')}`;
     const newItem: DailyProcurementItem = {
       ...itemData,
+      quantity: nonNegative(itemData.quantity),
+      unitPrice: nonNegative(itemData.unitPrice),
+      totalCost,
       id: newId,
       purchaseNumber: newNumber,
       recordedBy: currentUser.nameAr
     };
 
-    // If paid via safe, generate cash out voucher
-    if (itemData.paymentMethod === 'cash_safe') {
-      addCashVoucher({
+    addCashVoucher({
         type: 'cash_out',
         date: itemData.date,
-        amount: itemData.totalCost,
+        amount: totalCost,
         category: 'materials',
         categoryLabelAr: 'شراء مواد ومستهلكات موقع',
         partyName: itemData.supplierShop,
         partyType: 'supplier',
-        paymentMethod: 'cash',
-        description: `شراء نقدي: ${itemData.itemName} (${itemData.quantity} ${itemData.unit}) - ${itemData.projectName || 'استخدام داخلي'}`,
+        paymentMethod: itemData.paymentMethod === 'bank_transfer' ? 'bank_transfer' : 'cash',
+        description: `شراء: ${itemData.itemName} (${itemData.quantity} ${itemData.unit}) - ${itemData.projectName || 'استخدام داخلي'}`,
         projectId: itemData.projectId,
         projectName: itemData.projectName,
         referenceDocNumber: newNumber,
         notes: `مشتريات عاجلة بواسطة [${itemData.buyerName}] من [${itemData.supplierShop}].`
       });
-    }
 
     setProcurements((prev) => [newItem, ...prev]);
 
@@ -1163,24 +1486,38 @@ export const ErpProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const newNumber = `FL-${new Date().getFullYear()}-${String(fuelLogs.length + 1).padStart(3, '0')}`;
 
     // Calculate consumption rate
-    const distanceOrHours = Math.max(1, logData.currentOdometer - logData.previousOdometer);
-    let consumptionRate = 0;
-    if (logData.vehicleType === 'heavy_machinery' || logData.vehicleType === 'generator') {
-      // Liters per Hour
-      consumptionRate = roundMoney(logData.liters / distanceOrHours);
-    } else {
-      // Liters per 100 KM
-      consumptionRate = roundMoney((logData.liters / distanceOrHours) * 100);
+    const metrics = calculateFuelMetrics({
+      liters: logData.liters,
+      costPerLiter: logData.costPerLiter,
+      currentOdometer: logData.currentOdometer,
+      previousOdometer: logData.previousOdometer,
+      isHourly: logData.vehicleType === 'heavy_machinery' || logData.vehicleType === 'generator',
+      standardBenchmarkRate: logData.standardBenchmarkRate
+    });
+    if (!logData.vehicleName.trim() || !logData.driverOrOperator.trim() || metrics.liters <= 0 || metrics.totalAmount <= 0) {
+      showNotification('بيانات الوقود ناقصة', 'أدخل اسم الآلية والسائق وكمية الوقود وسعر اللتر.', 'error');
+      return false;
+    }
+    if (metrics.distanceOrHours <= 0) {
+      showNotification('قراءة عداد غير صحيحة', 'يجب أن تكون القراءة الحالية أكبر من القراءة السابقة.', 'error');
+      return false;
+    }
+    if (logData.paymentMethod === 'cash_safe' && metrics.totalAmount > liveSafeBalance) {
+      showNotification('رصيد الصندوق غير كافٍ', `المتاح ${liveSafeBalance.toLocaleString()} د.ع.`, 'error');
+      return false;
     }
 
-    // Benchmark anomaly detection (> 35% above benchmark)
-    const isAnomaly = consumptionRate > logData.standardBenchmarkRate * 1.35;
+    const { distanceOrHours, consumptionRate, isAnomaly } = metrics;
     const anomalyReason = isAnomaly
-      ? `استهلاك مرتفع (+${Math.round(((consumptionRate - logData.standardBenchmarkRate) / logData.standardBenchmarkRate) * 100)}% عن المعيار المقدر) - يتطلب فحص المحرك أو فلاتر الوقود أو التحقق من الهدر الميداني`
+      ? `استهلاك مرتفع (+${Math.round(metrics.variancePercent)}% عن المعيار المقدر) - يتطلب فحص المحرك أو فلاتر الوقود أو التحقق من الهدر الميداني`
       : undefined;
 
     const newLog: FuelFleetLog = {
       ...logData,
+      liters: metrics.liters,
+      costPerLiter: nonNegative(logData.costPerLiter),
+      totalAmount: metrics.totalAmount,
+      standardBenchmarkRate: metrics.benchmark,
       id: newId,
       logNumber: newNumber,
       distanceOrHours,
@@ -1190,23 +1527,21 @@ export const ErpProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       loggedBy: currentUser.nameAr
     };
 
-    if (logData.paymentMethod === 'cash_safe') {
-      addCashVoucher({
+    addCashVoucher({
         type: 'cash_out',
         date: logData.date,
-        amount: logData.totalAmount,
+        amount: metrics.totalAmount,
         category: 'fuel_maintenance',
         categoryLabelAr: 'وقود ومحروقات الآليات',
         partyName: logData.gasStation,
         partyType: 'supplier',
-        paymentMethod: 'cash',
+        paymentMethod: logData.paymentMethod === 'cash_safe' ? 'cash' : 'bank_transfer',
         description: `تعبئة وقود ${logData.fuelType === 'diesel' ? 'ديزل' : 'بنزين'} لآلية: ${logData.vehicleName} (${logData.liters} لتر)`,
         projectId: logData.projectId,
         projectName: logData.projectName,
         referenceDocNumber: newNumber,
         notes: `السائق: ${logData.driverOrOperator} | قراءة العداد: ${logData.currentOdometer}`
       });
-    }
 
     setFuelLogs((prev) => [newLog, ...prev]);
 
@@ -1220,30 +1555,38 @@ export const ErpProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const addOfficeExpense = (expData: Omit<OfficeOverheadExpense, 'id' | 'expenseNumber' | 'recordedBy'>): boolean => {
+    const amount = nonNegative(expData.amount);
+    if (!expData.title.trim() || !expData.recipientOrVendor.trim() || amount <= 0) {
+      showNotification('بيانات المصروف ناقصة', 'أدخل وصف المصروف والجهة المستلمة ومبلغًا أكبر من صفر.', 'error');
+      return false;
+    }
+    if (expData.paymentMethod === 'cash_safe' && amount > liveSafeBalance) {
+      showNotification('رصيد الصندوق غير كافٍ', `المتاح ${liveSafeBalance.toLocaleString()} د.ع.`, 'error');
+      return false;
+    }
     const newId = `EXP-${Date.now()}`;
     const newNumber = `OEX-${new Date().getFullYear()}-${String(officeExpenses.length + 1).padStart(3, '0')}`;
     const newExp: OfficeOverheadExpense = {
       ...expData,
+      amount,
       id: newId,
       expenseNumber: newNumber,
       recordedBy: currentUser.nameAr
     };
 
-    if (expData.paymentMethod === 'cash_safe') {
-      addCashVoucher({
+    addCashVoucher({
         type: 'cash_out',
         date: expData.date,
-        amount: expData.amount,
+        amount,
         category: 'utilities',
         categoryLabelAr: expData.categoryAr,
         partyName: expData.recipientOrVendor,
         partyType: 'supplier',
-        paymentMethod: 'cash',
+        paymentMethod: expData.paymentMethod === 'cash_safe' ? 'cash' : expData.paymentMethod,
         description: `مصروف إداري/مكتبي: ${expData.title}`,
         referenceDocNumber: newNumber,
         notes: expData.notes
       });
-    }
 
     setOfficeExpenses((prev) => [newExp, ...prev]);
 
@@ -1295,11 +1638,16 @@ export const ErpProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   ): boolean => {
     const vendor = vendors.find((v) => v.id === vendorId);
     if (!vendor) return false;
+    const safeAmount = nonNegative(amount);
+    if (safeAmount <= 0 || !description.trim() || !referenceDocNumber.trim()) {
+      showNotification('بيانات غير مكتملة', 'أدخل مبلغًا أكبر من صفر ووصفًا ورقم مستند.', 'error');
+      return false;
+    }
 
     const prj = projects.find((p) => p.id === projectId);
     const newTxId = `VTX-${Date.now()}`;
     const newTxNumber = `VTX-2026-${String(vendorTransactions.length + 1).padStart(4, '0')}`;
-    const newBalance = vendor.currentBalance + amount;
+    const newBalance = calculateLedgerBalance(vendor.totalBilled + safeAmount, vendor.totalPaid);
 
     const newTx: VendorTransaction = {
       id: newTxId,
@@ -1308,7 +1656,7 @@ export const ErpProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       vendorName: vendor.name,
       date: new Date().toISOString().split('T')[0],
       type: 'bill',
-      amount,
+      amount: safeAmount,
       projectId,
       projectName: prj?.nameAr,
       referenceDocNumber,
@@ -1323,8 +1671,8 @@ export const ErpProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         if (v.id === vendorId) {
           return {
             ...v,
-            totalBilled: v.totalBilled + amount,
-            currentBalance: v.currentBalance + amount
+            totalBilled: roundMoney(v.totalBilled + safeAmount),
+            currentBalance: calculateLedgerBalance(v.totalBilled + safeAmount, v.totalPaid)
           };
         }
         return v;
@@ -1352,7 +1700,17 @@ export const ErpProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const vendor = vendors.find((v) => v.id === vendorId);
     if (!vendor) return false;
 
-    if (paymentMethod === 'cash_safe' && liveSafeBalance < amount) {
+    const safeAmount = nonNegative(amount);
+    if (safeAmount <= 0) {
+      showNotification('قيمة غير صحيحة', 'يجب أن تكون الدفعة أكبر من صفر.', 'error');
+      return false;
+    }
+    if (safeAmount > vendor.currentBalance) {
+      showNotification('دفعة تتجاوز المستحق', `المبلغ الأقصى الممكن سداده هو ${vendor.currentBalance.toLocaleString()} د.ع.`, 'error');
+      return false;
+    }
+
+    if (paymentMethod === 'cash_safe' && liveSafeBalance < safeAmount) {
       showNotification(
         'رصيد الصندوق غير كافٍ',
         `الرصيد المتاح ${liveSafeBalance.toLocaleString()} د.ع لا يغطي الدفعة.`,
@@ -1363,26 +1721,20 @@ export const ErpProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const newTxId = `VTX-${Date.now()}`;
     const newTxNumber = `VTX-2026-${String(vendorTransactions.length + 1).padStart(4, '0')}`;
-    const newBalance = vendor.currentBalance - amount;
+    const newBalance = calculateLedgerBalance(vendor.totalBilled, vendor.totalPaid + safeAmount);
 
-    let linkedVoucherId: string | undefined = undefined;
-
-    if (paymentMethod === 'cash_safe') {
-      const vchId = `VCH-${Date.now()}`;
-      linkedVoucherId = vchId;
-      addCashVoucher({
+    addCashVoucher({
         type: 'cash_out',
         date: new Date().toISOString().split('T')[0],
-        amount,
+        amount: safeAmount,
         category: vendor.type === 'subcontractor' ? 'subcontractor' : 'materials',
         categoryLabelAr: vendor.type === 'subcontractor' ? 'دفعات مقاولي باطن' : 'توريدات ومواد',
         partyName: vendor.name,
         partyType: 'supplier',
-        paymentMethod: 'cash',
+        paymentMethod: paymentMethod === 'cash_safe' ? 'cash' : paymentMethod,
         description: `سداد دفعة للمورد/المقاول: ${description}`,
         referenceDocNumber: referenceDocNumber || newTxNumber
       });
-    }
 
     const newTx: VendorTransaction = {
       id: newTxId,
@@ -1391,10 +1743,10 @@ export const ErpProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       vendorName: vendor.name,
       date: new Date().toISOString().split('T')[0],
       type: 'payment',
-      amount,
+      amount: safeAmount,
       paymentMethod,
       referenceDocNumber,
-      linkedCashVoucherId: linkedVoucherId,
+      linkedCashVoucherId: undefined,
       description,
       balanceAfter: newBalance,
       recordedBy: currentUser.nameAr
@@ -1406,8 +1758,8 @@ export const ErpProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         if (v.id === vendorId) {
           return {
             ...v,
-            totalPaid: v.totalPaid + amount,
-            currentBalance: v.currentBalance - amount
+            totalPaid: roundMoney(v.totalPaid + safeAmount),
+            currentBalance: calculateLedgerBalance(v.totalBilled, v.totalPaid + safeAmount)
           };
         }
         return v;
@@ -1466,7 +1818,13 @@ export const ErpProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const machine = rentalMachinery.find((m) => m.id === machineryId);
     if (!machine) return false;
 
-    const totalAmount = unitsWorked * machine.unitRate;
+    const safeUnits = nonNegative(unitsWorked);
+    if (safeUnits <= 0 || !workDescription.trim() || !siteSupervisor.trim()) {
+      showNotification('بيانات التشغيل ناقصة', 'أدخل وحدات تشغيل أكبر من صفر ووصف العمل واسم المشرف.', 'error');
+      return false;
+    }
+
+    const totalAmount = calculateQuantityTotal(safeUnits, machine.unitRate);
     const newLogId = `RWL-${Date.now()}`;
     const newLogNumber = `RWL-2026-${String(rentalWorkLogs.length + 1).padStart(4, '0')}`;
 
@@ -1476,8 +1834,8 @@ export const ErpProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       machineryId,
       machineryName: machine.machineryName,
       date,
-      unitsWorked,
-      unitRate: machine.unitRate,
+      unitsWorked: safeUnits,
+      unitRate: nonNegative(machine.unitRate),
       totalAmount,
       workDescription,
       siteSupervisor,
@@ -1489,13 +1847,13 @@ export const ErpProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setRentalMachinery((prev) =>
       prev.map((m) => {
         if (m.id === machineryId) {
-          const newTotalUnits = m.totalUnitsWorked + unitsWorked;
-          const newTotalAccrued = m.totalAccruedCost + totalAmount;
+          const newTotalUnits = roundMoney(m.totalUnitsWorked + safeUnits);
+          const newTotalAccrued = roundMoney(m.totalAccruedCost + totalAmount);
           return {
             ...m,
             totalUnitsWorked: newTotalUnits,
             totalAccruedCost: newTotalAccrued,
-            balanceDue: newTotalAccrued - m.totalPaid
+            balanceDue: calculateLedgerBalance(newTotalAccrued, m.totalPaid)
           };
         }
         return m;
@@ -1525,32 +1883,38 @@ export const ErpProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const machine = rentalMachinery.find((m) => m.id === machineryId);
     if (!machine) return false;
 
-    if (paymentMethod === 'cash_safe' && liveSafeBalance < amount) {
+    const safeAmount = nonNegative(amount);
+    if (safeAmount <= 0) {
+      showNotification('قيمة غير صحيحة', 'يجب أن تكون الدفعة أكبر من صفر.', 'error');
+      return false;
+    }
+    if (safeAmount > machine.balanceDue) {
+      showNotification('دفعة تتجاوز المستحق', `المبلغ الأقصى الممكن سداده هو ${machine.balanceDue.toLocaleString()} د.ع.`, 'error');
+      return false;
+    }
+
+    if (paymentMethod === 'cash_safe' && liveSafeBalance < safeAmount) {
       showNotification('رصيد الصندوق غير كافٍ', `الرصيد المتاح لا يغطي دفعة الآلية المؤجرة.`, 'error');
       return false;
     }
 
     const newPayId = `RNP-${Date.now()}`;
     const newPayNumber = `RNP-2026-${String(rentalPayments.length + 1).padStart(3, '0')}`;
-    let linkedVoucherId: string | undefined = undefined;
-
-    if (paymentMethod === 'cash_safe') {
-      const vchId = `VCH-${Date.now()}`;
-      linkedVoucherId = vchId;
-      addCashVoucher({
+    addCashVoucher({
         type: 'cash_out',
         date: new Date().toISOString().split('T')[0],
-        amount,
+        amount: safeAmount,
         category: 'petty_cash',
         categoryLabelAr: 'أجور آليات وسيارات مؤجرة',
         partyName: machine.ownerName,
         partyType: 'supplier',
-        paymentMethod: 'cash',
+        paymentMethod: paymentMethod === 'cash_safe' ? 'cash' : paymentMethod,
         description: `سداد أجور تأجير: ${machine.machineryName} (${machine.ownerName})`,
+        projectId: machine.assignedProjectId,
+        projectName: machine.assignedProjectName,
         referenceDocNumber: newPayNumber,
         notes
       });
-    }
 
     const newPayment: RentalPayment = {
       id: newPayId,
@@ -1559,9 +1923,9 @@ export const ErpProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       machineryName: machine.machineryName,
       ownerName: machine.ownerName,
       date: new Date().toISOString().split('T')[0],
-      amount,
+      amount: safeAmount,
       paymentMethod,
-      linkedCashVoucherId: linkedVoucherId,
+      linkedCashVoucherId: undefined,
       referenceDocNumber: newPayNumber,
       notes,
       recordedBy: currentUser.nameAr
@@ -1571,11 +1935,11 @@ export const ErpProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setRentalMachinery((prev) =>
       prev.map((m) => {
         if (m.id === machineryId) {
-          const newPaid = m.totalPaid + amount;
+          const newPaid = roundMoney(m.totalPaid + safeAmount);
           return {
             ...m,
             totalPaid: newPaid,
-            balanceDue: m.totalAccruedCost - newPaid
+            balanceDue: calculateLedgerBalance(m.totalAccruedCost, newPaid)
           };
         }
         return m;
@@ -1606,8 +1970,11 @@ export const ErpProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       licenseHash: license.signatureChecksum,
       data: {
         projects,
+        transactions,
         invoices,
         cashVouchers,
+        dailyRegisters,
+        openingBalance,
         siteLogs,
         employees,
         salarySlips,
@@ -1653,8 +2020,12 @@ export const ErpProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         return { success: false, message: 'ملف النسخة الاحتياطية غير صالح أو تالف.' };
       }
 
+      if (parsed.data.projects) setProjects(parsed.data.projects);
+      if (parsed.data.transactions) setTransactions(parsed.data.transactions);
       if (parsed.data.invoices) setInvoices(parsed.data.invoices);
       if (parsed.data.cashVouchers) setCashVouchers(parsed.data.cashVouchers);
+      if (parsed.data.dailyRegisters) setDailyRegisters(parsed.data.dailyRegisters);
+      if (typeof parsed.data.openingBalance === 'number') setOpeningBalance(nonNegative(parsed.data.openingBalance));
       if (parsed.data.siteLogs) setSiteLogs(parsed.data.siteLogs);
       if (parsed.data.employees) setEmployees(parsed.data.employees);
       if (parsed.data.salarySlips) setSalarySlips(parsed.data.salarySlips);
@@ -1718,14 +2089,17 @@ export const ErpProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   return (
     <ErpContext.Provider
       value={{
+        cloudSyncStatus,
         isAuthenticated,
         loginWithPin,
         logout,
         switchRoleWithPin,
         updateRolePin,
-        userPins,
         userProfiles,
+        activeUserRoles,
         updateUserProfile,
+        deleteUserAccount,
+        restoreUserAccount,
         currentRole,
         roleConfig,
         currentUser,

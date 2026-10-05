@@ -671,7 +671,7 @@ export const SubcontractorsView: React.FC = () => {
                   required
                   value={newVendorForm.name}
                   onChange={(e) => setNewVendorForm({ ...newVendorForm, name: e.target.value })}
-                  placeholder="مثال: شركة اليمامة للخرسانة الجاهزة"
+                  placeholder="اسم المورد أو المقاول"
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-amber-500"
                 />
               </div>
@@ -715,7 +715,7 @@ export const SubcontractorsView: React.FC = () => {
                   required
                   value={newVendorForm.specialty}
                   onChange={(e) => setNewVendorForm({ ...newVendorForm, specialty: e.target.value })}
-                  placeholder="مثال: توريد حديد سابك، أعمال تكييف ودكتات، خرسانة مقاومة..."
+                  placeholder="التخصص أو نوع الأعمال"
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2.5 text-sm text-slate-100 focus:outline-none focus:border-amber-500"
                 />
               </div>
@@ -877,7 +877,7 @@ export const SubcontractorsView: React.FC = () => {
                   required
                   value={billForm.description}
                   onChange={(e) => setBillForm({ ...billForm, description: e.target.value })}
-                  placeholder="مثال: توريد 480م³ خرسانة مقاومة لسقف الدور الأرضي..."
+                  placeholder="وصف الفاتورة أو المستخلص"
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-sm text-slate-100 focus:outline-none focus:border-amber-500"
                 />
               </div>

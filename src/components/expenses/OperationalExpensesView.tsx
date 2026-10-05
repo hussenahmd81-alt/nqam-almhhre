@@ -33,6 +33,7 @@ import {
   FuelType,
   OfficeExpenseCategory
 } from '../../types/erp';
+import { calculateFuelMetrics, calculateQuantityTotal } from '../../utils/financialUtils';
 
 export const OperationalExpensesView: React.FC = () => {
   const {
@@ -60,29 +61,29 @@ export const OperationalExpensesView: React.FC = () => {
   const [procCategoryAr, setProcCategoryAr] = useState('مواد ومستهلكات موقع');
   const [procQuantity, setProcQuantity] = useState('1');
   const [procUnit, setProcUnit] = useState('طقم');
-  const [procUnitPrice, setProcUnitPrice] = useState('100');
+  const [procUnitPrice, setProcUnitPrice] = useState('');
   const [procSupplier, setProcSupplier] = useState('');
   const [procBuyer, setProcBuyer] = useState(currentUser.nameAr);
   const [procProjectId, setProcProjectId] = useState(projects[0]?.id || '');
   const [procIsOffice, setProcIsOffice] = useState(false);
   const [procPaymentMethod, setProcPaymentMethod] = useState<'cash_safe' | 'bank_transfer' | 'petty_cash'>('cash_safe');
-  const [procInvoicePhoto, setProcInvoicePhoto] = useState<string>('https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&w=400&q=80');
+  const [procInvoicePhoto, setProcInvoicePhoto] = useState<string>('');
   const [procNotes, setProcNotes] = useState('');
 
   // New Fuel Modal
   const [isFuelModalOpen, setIsFuelModalOpen] = useState(false);
-  const [fuelVehicleName, setFuelVehicleName] = useState('قلاب مرسيدس آكتروس 3340');
-  const [fuelPlateNumber, setFuelPlateNumber] = useState('أ ب ر 4821');
+  const [fuelVehicleName, setFuelVehicleName] = useState('');
+  const [fuelPlateNumber, setFuelPlateNumber] = useState('');
   const [fuelVehicleType, setFuelVehicleType] = useState<'truck' | 'pickup' | 'passenger_van' | 'heavy_machinery' | 'generator'>('truck');
-  const [fuelDriver, setFuelDriver] = useState('صالح الغامدي');
+  const [fuelDriver, setFuelDriver] = useState('');
   const [fuelType, setFuelType] = useState<FuelType>('diesel');
-  const [fuelLiters, setFuelLiters] = useState('150');
-  const [fuelCostPerLiter, setFuelCostPerLiter] = useState('1.15');
-  const [fuelCurrentOdo, setFuelCurrentOdo] = useState('143300');
-  const [fuelPrevOdo, setFuelPrevOdo] = useState('142850');
-  const [fuelBenchmark, setFuelBenchmark] = useState('38.0');
-  const [fuelGasStation, setFuelGasStation] = useState('محطة الدريس - مخرج 16');
-  const [fuelProjectId, setFuelProjectId] = useState(projects[0]?.id || 'PRJ-101');
+  const [fuelLiters, setFuelLiters] = useState('');
+  const [fuelCostPerLiter, setFuelCostPerLiter] = useState('');
+  const [fuelCurrentOdo, setFuelCurrentOdo] = useState('');
+  const [fuelPrevOdo, setFuelPrevOdo] = useState('');
+  const [fuelBenchmark, setFuelBenchmark] = useState('');
+  const [fuelGasStation, setFuelGasStation] = useState('');
+  const [fuelProjectId, setFuelProjectId] = useState(projects[0]?.id || '');
   const [fuelPaymentMethod, setFuelPaymentMethod] = useState<'cash_safe' | 'fuel_card' | 'bank_transfer'>('cash_safe');
 
   // New Office Expense Modal
@@ -90,7 +91,7 @@ export const OperationalExpensesView: React.FC = () => {
   const [officeCategory, setOfficeCategory] = useState<OfficeExpenseCategory>('hospitality');
   const [officeCategoryAr, setOfficeCategoryAr] = useState('ضيافة العملاء وكبار الشخصيات');
   const [officeTitle, setOfficeTitle] = useState('');
-  const [officeAmount, setOfficeAmount] = useState('500');
+  const [officeAmount, setOfficeAmount] = useState('');
   const [officeVendor, setOfficeVendor] = useState('');
   const [officeDocRef, setOfficeDocRef] = useState('');
   const [officePaymentMethod, setOfficePaymentMethod] = useState<'cash_safe' | 'bank_transfer' | 'check'>('cash_safe');
@@ -110,7 +111,7 @@ export const OperationalExpensesView: React.FC = () => {
     if (!procItemName.trim()) return;
     const qty = parseFloat(procQuantity) || 1;
     const price = parseFloat(procUnitPrice) || 0;
-    const total = qty * price;
+    const total = calculateQuantityTotal(qty, price);
     const proj = projects.find((p) => p.id === procProjectId);
 
     addProcurementItem({
@@ -122,10 +123,10 @@ export const OperationalExpensesView: React.FC = () => {
       unit: procUnit,
       unitPrice: price,
       totalCost: total,
-      supplierShop: procSupplier || 'سوق المواد المركزي',
+      supplierShop: procSupplier,
       buyerName: procBuyer || currentUser.nameAr,
       projectId: procIsOffice ? undefined : proj?.id,
-      projectName: procIsOffice ? 'المقر الرئيسي (داخلي)' : proj?.nameAr,
+      projectName: procIsOffice ? 'المقر الرئيسي' : proj?.nameAr,
       isInternalOffice: procIsOffice,
       paymentMethod: procPaymentMethod,
       hasInvoicePhoto: Boolean(procInvoicePhoto),
@@ -140,12 +141,19 @@ export const OperationalExpensesView: React.FC = () => {
   const handleCreateFuelLog = (e: React.FormEvent) => {
     e.preventDefault();
     const ltr = parseFloat(fuelLiters) || 0;
-    const costLtr = parseFloat(fuelCostPerLiter) || 1.15;
-    const total = Math.round(ltr * costLtr * 100) / 100;
+    const costLtr = parseFloat(fuelCostPerLiter) || 0;
     const curOdo = parseFloat(fuelCurrentOdo) || 0;
     const prevOdo = parseFloat(fuelPrevOdo) || 0;
-    const bench = parseFloat(fuelBenchmark) || 30;
+    const bench = parseFloat(fuelBenchmark) || 0;
     const proj = projects.find((p) => p.id === fuelProjectId);
+    const metrics = calculateFuelMetrics({
+      liters: ltr,
+      costPerLiter: costLtr,
+      currentOdometer: curOdo,
+      previousOdometer: prevOdo,
+      isHourly: fuelVehicleType === 'heavy_machinery' || fuelVehicleType === 'generator',
+      standardBenchmarkRate: bench
+    });
 
     addFuelLog({
       date: new Date().toISOString().split('T')[0],
@@ -156,13 +164,13 @@ export const OperationalExpensesView: React.FC = () => {
       fuelType,
       liters: ltr,
       costPerLiter: costLtr,
-      totalAmount: total,
+      totalAmount: metrics.totalAmount,
       currentOdometer: curOdo,
       previousOdometer: prevOdo,
       standardBenchmarkRate: bench,
       gasStation: fuelGasStation,
-      projectId: proj?.id || 'PRJ-101',
-      projectName: proj?.nameAr || 'الموقع العام',
+      projectId: proj?.id || '',
+      projectName: proj?.nameAr || '',
       paymentMethod: fuelPaymentMethod
     });
 
@@ -181,7 +189,7 @@ export const OperationalExpensesView: React.FC = () => {
       title: officeTitle,
       amount: amt,
       paymentMethod: officePaymentMethod,
-      recipientOrVendor: officeVendor || 'مورد خدمات',
+      recipientOrVendor: officeVendor,
       receiptDocRef: officeDocRef,
       notes: officeNotes
     });
@@ -666,7 +674,7 @@ export const OperationalExpensesView: React.FC = () => {
                   required
                   value={procItemName}
                   onChange={(e) => setProcItemName(e.target.value)}
-                  placeholder="مثال: مسامير صلب 10سم، قفازات سلامة، شفرات قص..."
+                  placeholder="اسم المادة أو المستهلك"
                   className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2.5 text-white focus:outline-none focus:border-amber-500"
                 />
               </div>
@@ -1002,7 +1010,7 @@ export const OperationalExpensesView: React.FC = () => {
                   required
                   value={officeTitle}
                   onChange={(e) => setOfficeTitle(e.target.value)}
-                  placeholder="مثال: فاتورة المياه، ضيافة وفد، تجديد اشتراك..."
+                  placeholder="وصف المصروف"
                   className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2.5 text-white"
                 />
               </div>

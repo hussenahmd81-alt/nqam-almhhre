@@ -17,7 +17,9 @@ import {
   Sparkles,
   Cpu,
   BadgeCheck,
-  Building2
+  Building2,
+  Trash2,
+  RotateCcw
 } from 'lucide-react';
 
 export const DirectorSettingsView: React.FC = () => {
@@ -25,18 +27,20 @@ export const DirectorSettingsView: React.FC = () => {
     currentRole,
     currentUser,
     userProfiles,
-    userPins,
+    activeUserRoles,
     updateUserProfile,
     updateRolePin,
+    deleteUserAccount,
+    restoreUserAccount,
     showNotification
   } = useErp();
 
   // Role edit forms local state
-  const [editingRole, setEditingRole] = useState<UserRole>('super_admin');
+  const [editingRole, setEditingRole] = useState<UserRole>(currentRole);
   const [formNames, setFormNames] = useState<Record<UserRole, string>>({
-    super_admin: userProfiles.super_admin?.nameAr || 'صادق جعفر',
-    accountant: userProfiles.accountant?.nameAr || 'حسين احمد',
-    data_entry: userProfiles.data_entry?.nameAr || 'مسؤول الموقع والبيانات'
+    super_admin: userProfiles.super_admin?.nameAr || 'المدير العام',
+    accountant: userProfiles.accountant?.nameAr || 'المحاسب المالي',
+    data_entry: userProfiles.data_entry?.nameAr || 'مسؤول الموقع'
   });
 
   const [formTitles, setFormTitles] = useState<Record<UserRole, string>>({
@@ -46,10 +50,12 @@ export const DirectorSettingsView: React.FC = () => {
   });
 
   const [formPins, setFormPins] = useState<Record<UserRole, string>>({
-    super_admin: userPins.super_admin || '2026',
-    accountant: userPins.accountant || '2222',
-    data_entry: userPins.data_entry || '3333'
+    super_admin: '',
+    accountant: '',
+    data_entry: ''
   });
+  const [currentPin, setCurrentPin] = useState('');
+  const [pendingDeleteRole, setPendingDeleteRole] = useState<UserRole | null>(null);
 
   const [showPins, setShowPins] = useState<Record<UserRole, boolean>>({
     super_admin: false,
@@ -61,20 +67,6 @@ export const DirectorSettingsView: React.FC = () => {
   const [errorMsg, setErrorMsg] = useState<string>('');
 
   const isSuperAdmin = currentRole === 'super_admin';
-
-  if (!isSuperAdmin) {
-    return (
-      <div className="p-8 rounded-3xl bg-slate-900 border border-rose-500/30 text-center space-y-4">
-        <div className="w-16 h-16 mx-auto rounded-2xl bg-rose-500/10 text-rose-400 flex items-center justify-center">
-          <Lock className="w-8 h-8" />
-        </div>
-        <h2 className="text-xl font-bold text-white">منطقة محظورة أمنياً</h2>
-        <p className="text-sm text-slate-400 max-w-md mx-auto">
-          هذا القسم مخصص حصراً للمدير العام ({userProfiles.super_admin?.nameAr || 'صادق جعفر'}) لتعديل الأسماء وكلمات السر لكافة الحسابات.
-        </p>
-      </div>
-    );
-  }
 
   const handleSaveRole = (role: UserRole) => {
     setErrorMsg('');
@@ -89,34 +81,37 @@ export const DirectorSettingsView: React.FC = () => {
       return;
     }
 
-    if (!newPin || newPin.length < 4) {
-      setErrorMsg('يجب أن تتكون كلمة السر (الرمز السري PIN) من 4 أرقام أو حروف على الأقل');
+    if (newPin && newPin.length < 4) {
+      setErrorMsg('يجب أن تتكون كلمة السر الجديدة من 4 خانات على الأقل');
       return;
     }
 
-    // 1. Update Name and Title
+    // Validate the current password before applying any profile change.
+    if (newPin) {
+      const pinRes = updateRolePin(role, isSuperAdmin ? '' : currentPin, newPin);
+      if (!pinRes.success) {
+        setErrorMsg(pinRes.message);
+        return;
+      }
+    }
+
     const nameRes = updateUserProfile(role, newName, newTitle);
     if (!nameRes.success) {
       setErrorMsg(nameRes.message);
       return;
     }
 
-    // 2. Update PIN
-    const pinRes = updateRolePin(role, userPins[role], newPin);
-    if (!pinRes.success) {
-      setErrorMsg(pinRes.message);
-      return;
-    }
-
-    setSuccessMsg(`تم بنجاح تحديث بيانات وكلمة سر [${ROLES_CONFIG[role].nameAr}]`);
+    setFormPins((prev) => ({ ...prev, [role]: '' }));
+    setCurrentPin('');
+    setSuccessMsg(`تم بنجاح تحديث بيانات الحساب [${ROLES_CONFIG[role].nameAr}]`);
     showNotification(
       'تم حفظ التعديلات',
-      `تم تحديث الاسم إلى (${newName}) وكلمة السر بنجاح.`,
+      `تم تحديث الاسم إلى (${newName})${newPin ? ' وكلمة السر' : ''} بنجاح.`,
       'success'
     );
   };
 
-  const rolesConfigList: {
+  const allRolesConfigList: {
     id: UserRole;
     icon: React.ComponentType<{ className?: string }>;
     color: string;
@@ -125,6 +120,24 @@ export const DirectorSettingsView: React.FC = () => {
     { id: 'accountant', icon: Users, color: 'emerald' },
     { id: 'data_entry', icon: HardHat, color: 'sky' }
   ];
+  const rolesConfigList = isSuperAdmin
+    ? allRolesConfigList
+    : allRolesConfigList.filter((role) => role.id === currentRole);
+
+  const handleDeleteRole = (role: UserRole) => {
+    if (pendingDeleteRole !== role) {
+      setPendingDeleteRole(role);
+      setErrorMsg('اضغط زر الحذف مرة ثانية لتأكيد حذف الحساب من شاشة الدخول.');
+      return;
+    }
+    const result = deleteUserAccount(role);
+    if (!result.success) {
+      setErrorMsg(result.message);
+      return;
+    }
+    setPendingDeleteRole(null);
+    setSuccessMsg(result.message);
+  };
 
   return (
     <div className="space-y-6 text-right animate-in fade-in duration-300">
@@ -135,15 +148,17 @@ export const DirectorSettingsView: React.FC = () => {
             <div className="flex items-center gap-2">
               <span className="px-3 py-1 rounded-xl bg-amber-500/15 text-amber-400 border border-amber-500/30 text-xs font-bold flex items-center gap-1.5">
                 <Sparkles className="w-3.5 h-3.5" />
-                لوحة إعدادات المدير العام
+                إعدادات الحسابات
               </span>
-              <span className="text-xs text-slate-400">· تحكم أمني مطلق</span>
+              <span className="text-xs text-slate-400">· إدارة محلية للحسابات</span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-              إدارة حسابات النظام، الأسماء وكلمات السر
+              إدارة الاسم وكلمة السر وحالة الحساب
             </h1>
             <p className="text-xs sm:text-sm text-slate-300 max-w-2xl leading-relaxed">
-              بصفتك المدير العام ({userProfiles.super_admin?.nameAr || 'صادق جعفر'})، يمكنك من هنا تعديل أسماء المسؤولين، والمسميات الوظيفية، وتعيين كلمات السر ورموز الدخول (PIN) للجميع.
+              {isSuperAdmin
+                ? 'يمكنك تعديل حسابات النظام أو تعطيلها، مع بقاء حساب المدير العام محمياً من الحذف.'
+                : 'يمكنك تعديل اسمك ومسمّاك وكلمة سر حسابك، أو حذف حسابك من شاشة الدخول.'}
             </p>
           </div>
 
@@ -180,6 +195,7 @@ export const DirectorSettingsView: React.FC = () => {
           const isSelected = editingRole === id;
           const currentProfile = userProfiles[id];
           const config = ROLES_CONFIG[id];
+          const isActive = activeUserRoles.includes(id);
 
           return (
             <button
@@ -217,7 +233,7 @@ export const DirectorSettingsView: React.FC = () => {
                   {currentProfile?.nameAr}
                 </span>
                 <span className="text-[11px] text-slate-400 block truncate">
-                  {config.nameAr.split('(')[0]}
+                  {isActive ? config.nameAr.split('(')[0] : 'حساب محذوف'}
                 </span>
               </div>
             </button>
@@ -237,10 +253,27 @@ export const DirectorSettingsView: React.FC = () => {
               قم بتعديل الاسم الظاهر في المستندات والفواتير وكلمة المرور الخاصة بهذا الحساب.
             </p>
           </div>
-          <span className="px-3 py-1 rounded-xl bg-slate-800 border border-slate-700 text-amber-400 font-mono text-xs font-bold">
-            رمز PIN الحالي: {userPins[editingRole]}
+          <span className={`px-3 py-1 rounded-xl border text-xs font-bold ${activeUserRoles.includes(editingRole) ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' : 'bg-rose-500/10 border-rose-500/30 text-rose-300'}`}>
+            {activeUserRoles.includes(editingRole) ? 'الحساب نشط' : 'الحساب محذوف'}
           </span>
         </div>
+
+        {!activeUserRoles.includes(editingRole) ? (
+          <div className="p-6 rounded-2xl bg-slate-950 border border-slate-800 text-center space-y-3">
+            <p className="text-sm text-slate-300">هذا الحساب غير ظاهر في شاشة الدخول.</p>
+            <button
+              type="button"
+              onClick={() => {
+                const result = restoreUserAccount(editingRole);
+                result.success ? setSuccessMsg(result.message) : setErrorMsg(result.message);
+              }}
+              className="mx-auto px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-2"
+            >
+              <RotateCcw className="w-4 h-4" /> إعادة تفعيل الحساب
+            </button>
+          </div>
+        ) : (
+        <>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Name Field */}
@@ -292,12 +325,11 @@ export const DirectorSettingsView: React.FC = () => {
           {/* Password / PIN Field */}
           <div className="space-y-2 md:col-span-2">
             <label className="block text-xs font-bold text-slate-300">
-              كلمة السر والرمز السري للدخول (PIN):
+              كلمة سر جديدة (اتركها فارغة إذا لا تريد تغييرها):
             </label>
             <div className="relative max-w-md">
               <input
                 type={showPins[editingRole] ? 'text' : 'password'}
-                required
                 value={formPins[editingRole]}
                 onChange={(e) =>
                   setFormPins({ ...formPins, [editingRole]: e.target.value })
@@ -321,13 +353,35 @@ export const DirectorSettingsView: React.FC = () => {
               </button>
             </div>
             <p className="text-[11px] text-slate-400">
-              * هذا هو الرمز الذي سيطلبه النظام عند تسجيل الدخول أو التبديل لهذا الحساب.
+              * لن يعرض النظام كلمة السر الحالية. تُستخدم الكلمة الجديدة عند تسجيل الدخول التالي.
             </p>
           </div>
+
+          {!isSuperAdmin && (
+            <div className="space-y-2 md:col-span-2">
+              <label className="block text-xs font-bold text-slate-300">كلمة السر الحالية لتأكيد التغيير:</label>
+              <input
+                type="password"
+                value={currentPin}
+                onChange={(e) => setCurrentPin(e.target.value)}
+                className="w-full max-w-md p-3.5 rounded-2xl bg-slate-950 border border-slate-700 text-white font-mono outline-none focus:border-amber-400"
+              />
+            </div>
+          )}
         </div>
 
         {/* Action Button */}
-        <div className="pt-4 border-t border-slate-800 flex items-center justify-end">
+        <div className="pt-4 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3">
+          {editingRole !== 'super_admin' && (
+            <button
+              type="button"
+              onClick={() => handleDeleteRole(editingRole)}
+              className="py-3 px-5 rounded-2xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 font-bold text-xs flex items-center gap-2"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span>{pendingDeleteRole === editingRole ? 'تأكيد حذف الحساب' : 'حذف الحساب'}</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={() => handleSaveRole(editingRole)}
@@ -337,6 +391,8 @@ export const DirectorSettingsView: React.FC = () => {
             <span>حفظ بيانات وكلمة سر {ROLES_CONFIG[editingRole].nameAr.split('(')[0]}</span>
           </button>
         </div>
+        </>
+        )}
       </div>
 
       {/* Developer and Technical Partner Credit Card */}

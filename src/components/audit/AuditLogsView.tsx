@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { useErp } from '../../context/ErpContext';
 import {
   History,
-  ShieldAlert,
   Search,
   Filter,
   AlertTriangle,
@@ -10,7 +9,6 @@ import {
   Lock,
   User,
   Clock,
-  Sparkles,
   Download,
   AlertCircle
 } from 'lucide-react';
@@ -18,11 +16,8 @@ import {
 export const AuditLogsView: React.FC = () => {
   const {
     auditLogs,
-    addAuditLog,
     hasPermission,
-    currentRole,
-    roleConfig,
-    showNotification
+    roleConfig
   } = useErp();
 
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
@@ -30,25 +25,6 @@ export const AuditLogsView: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   const canAccess = hasPermission('canAccessAuditLogs');
-
-  const handleSimulateTamperAttempt = () => {
-    addAuditLog(
-      'محاكاة رصد: محاولة تعديل مستند مالي خارج نطاق الصلاحيات',
-      'security',
-      'critical',
-      'تم إحباط محاولة تعديل رقم الحساب البنكي لمستخلص مقاول باطن عبر واجهة غير مصرحة. تم تشفير الحساب وإشعار الإدارة العليا.',
-      {
-        field: 'IBAN_RECIPIENT',
-        oldVal: 'SA038000020160801009999',
-        newVal: 'SA9911111111111111111111'
-      }
-    );
-    showNotification(
-      'تم تسجيل حادثة أمنية في سجل التدقيق',
-      'تم التقاط محاولة التلاعب المالي بنجاح وقيدها مع تفاصيل البصمة والـ IP.',
-      'error'
-    );
-  };
 
   if (!canAccess) {
     return (
@@ -92,18 +68,10 @@ export const AuditLogsView: React.FC = () => {
             </h1>
           </div>
           <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            نظام تتبع غير قابل للتعديل يسجل كافة الحركات المالية، تعديل التراخيص، ومحاولات الوصول لمنع أي شبهة تلاعب.
+            سجل محلي يتابع الحركات المالية وتعديلات الحسابات ومحاولات الوصول، وسيُنقل إلى قاعدة البيانات عند ربطها.
           </p>
         </div>
 
-        {/* Action: Simulate Security Alert */}
-        <button
-          onClick={handleSimulateTamperAttempt}
-          className="px-4 py-2.5 rounded-xl border border-rose-500/40 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 font-bold text-xs flex items-center justify-center gap-2 transition-colors shadow-lg shadow-rose-500/10 shrink-0"
-        >
-          <ShieldAlert className="w-4 h-4 text-rose-400" />
-          محاكاة محاولة تلاعب مالي (Test Security Log)
-        </button>
       </div>
 
       {/* Filter and Search Bar */}
@@ -149,7 +117,7 @@ export const AuditLogsView: React.FC = () => {
       <div className="rounded-3xl border border-slate-800 bg-slate-900/80 backdrop-blur-xl overflow-hidden shadow-2xl">
         <div className="p-4 border-b border-slate-800 flex items-center justify-between text-xs text-slate-400">
           <span className="font-semibold text-white">السجلات المعتمدة ({filteredLogs.length})</span>
-          <span className="font-mono text-slate-400">سجل مشفر ومعتمد آلياً</span>
+          <span className="font-mono text-slate-400">سجل محلي بانتظار الربط المركزي</span>
         </div>
 
         <div className="divide-y divide-slate-800/80">

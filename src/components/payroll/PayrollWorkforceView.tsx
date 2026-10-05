@@ -26,6 +26,7 @@ import { useErp } from '../../context/ErpContext';
 import { Employee, MonthlySalarySlip, ProjectWorker, WeeklyLaborTimesheet } from '../../types/erp';
 import { PayslipPrintModal } from './PayslipPrintModal';
 import { WeeklyTimesheetPrintModal } from './WeeklyTimesheetPrintModal';
+import { calculateEmployeePackage, calculateMonthlySalary, roundMoney } from '../../utils/financialUtils';
 
 export const PayrollWorkforceView: React.FC = () => {
   const {
@@ -46,8 +47,8 @@ export const PayrollWorkforceView: React.FC = () => {
   } = useErp();
 
   const [activeTab, setActiveTab] = useState<'monthly' | 'weekly' | 'directory'>('monthly');
-  const [selectedMonth, setSelectedMonth] = useState<string>('2026-09');
-  const [selectedProjectId, setSelectedProjectId] = useState<string>(projects[0]?.id || 'PRJ-101');
+  const [selectedMonth, setSelectedMonth] = useState<string>(() => new Date().toISOString().slice(0, 7));
+  const [selectedProjectId, setSelectedProjectId] = useState<string>(projects[0]?.id || '');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   // Print Modals State
@@ -65,22 +66,22 @@ export const PayrollWorkforceView: React.FC = () => {
   const [newEmpRole, setNewEmpRole] = useState('');
   const [newEmpDept, setNewEmpDept] = useState<'projects' | 'engineering' | 'finance' | 'administration' | 'logistics'>('projects');
   const [newEmpDeptAr, setNewEmpDeptAr] = useState('إدارة المشاريع الميدانية');
-  const [newEmpBasic, setNewEmpBasic] = useState('10000');
-  const [newEmpHousing, setNewEmpHousing] = useState('2000');
-  const [newEmpTransport, setNewEmpTransport] = useState('1000');
-  const [newEmpOther, setNewEmpOther] = useState('500');
-  const [newEmpBank, setNewEmpBank] = useState('مصرف الراجحي');
-  const [newEmpIban, setNewEmpIban] = useState('SA');
-  const [newEmpPhone, setNewEmpPhone] = useState('+966 5');
+  const [newEmpBasic, setNewEmpBasic] = useState('');
+  const [newEmpHousing, setNewEmpHousing] = useState('');
+  const [newEmpTransport, setNewEmpTransport] = useState('');
+  const [newEmpOther, setNewEmpOther] = useState('');
+  const [newEmpBank, setNewEmpBank] = useState('');
+  const [newEmpIban, setNewEmpIban] = useState('');
+  const [newEmpPhone, setNewEmpPhone] = useState('');
   const [newEmpProject, setNewEmpProject] = useState(projects[0]?.id || '');
 
   // New Worker Form State
   const [newWrkName, setNewWrkName] = useState('');
   const [newWrkCraft, setNewWrkCraft] = useState('نجار مسلح');
-  const [newWrkPhone, setNewWrkPhone] = useState('+966 5');
+  const [newWrkPhone, setNewWrkPhone] = useState('');
   const [newWrkNationalId, setNewWrkNationalId] = useState('');
-  const [newWrkDailyRate, setNewWrkDailyRate] = useState('180');
-  const [newWrkProject, setNewWrkProject] = useState(projects[0]?.id || 'PRJ-101');
+  const [newWrkDailyRate, setNewWrkDailyRate] = useState('');
+  const [newWrkProject, setNewWrkProject] = useState(projects[0]?.id || '');
 
   // New Slip Form State
   const [newSlipEmpId, setNewSlipEmpId] = useState(employees[0]?.id || '');
@@ -113,7 +114,7 @@ export const PayrollWorkforceView: React.FC = () => {
     const housing = parseFloat(newEmpHousing) || 0;
     const transport = parseFloat(newEmpTransport) || 0;
     const other = parseFloat(newEmpOther) || 0;
-    const totalPkg = basic + housing + transport + other;
+    const totalPkg = calculateEmployeePackage(basic, housing, transport, other);
     const proj = projects.find((p) => p.id === newEmpProject);
 
     addEmployee({
@@ -143,7 +144,7 @@ export const PayrollWorkforceView: React.FC = () => {
 
   const handleCreateWorker = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newWrkName.trim()) return;
+    if (!newWrkName.trim() || !newWrkProject || (parseFloat(newWrkDailyRate) || 0) <= 0) return;
     const proj = projects.find((p) => p.id === newWrkProject);
 
     addProjectWorker({
@@ -151,9 +152,9 @@ export const PayrollWorkforceView: React.FC = () => {
       craft: newWrkCraft,
       phone: newWrkPhone,
       nationalId: newWrkNationalId,
-      dailyRate: parseFloat(newWrkDailyRate) || 150,
-      projectId: proj?.id || 'PRJ-101',
-      projectName: proj?.nameAr || 'الموقع العام',
+      dailyRate: parseFloat(newWrkDailyRate) || 0,
+      projectId: proj!.id,
+      projectName: proj!.nameAr,
       status: 'active'
     });
 
@@ -175,7 +176,15 @@ export const PayrollWorkforceView: React.FC = () => {
     const penalties = parseFloat(newSlipPenalties) || 0;
 
     const totalAllowances = emp.housingAllowance + emp.transportAllowance + emp.otherAllowances;
-    const net = Math.max(0, emp.basicSalary + totalAllowances + otAmount + bonuses - (advances + absDeduct + penalties));
+    const salaryTotals = calculateMonthlySalary({
+      basicSalary: emp.basicSalary,
+      totalAllowances,
+      overtimeAmount: otAmount,
+      bonuses,
+      advancesDeduction: advances,
+      absenceDeduction: absDeduct,
+      penaltiesDeduction: penalties
+    });
 
     addSalarySlip({
       employeeId: emp.id,
@@ -192,7 +201,7 @@ export const PayrollWorkforceView: React.FC = () => {
       absenceDays: absDays,
       absenceDeduction: absDeduct,
       penaltiesDeduction: penalties,
-      netPayable: net,
+      netPayable: salaryTotals.netPayable,
       status: 'draft',
       notes: newSlipNotes
     });
@@ -782,7 +791,7 @@ export const PayrollWorkforceView: React.FC = () => {
                     required
                     value={newEmpName}
                     onChange={(e) => setNewEmpName(e.target.value)}
-                    placeholder="مثال: م. أحمد الغامدي"
+                    placeholder="الاسم الكامل"
                     className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2.5 text-white focus:outline-none focus:border-amber-500"
                   />
                 </div>
@@ -793,7 +802,7 @@ export const PayrollWorkforceView: React.FC = () => {
                     required
                     value={newEmpRole}
                     onChange={(e) => setNewEmpRole(e.target.value)}
-                    placeholder="مثال: مهندس موقع أول"
+                    placeholder="المسمى الوظيفي"
                     className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2.5 text-white focus:outline-none focus:border-amber-500"
                   />
                 </div>
@@ -952,7 +961,7 @@ export const PayrollWorkforceView: React.FC = () => {
                   required
                   value={newWrkName}
                   onChange={(e) => setNewWrkName(e.target.value)}
-                  placeholder="مثال: صالح عمر بارباع"
+                  placeholder="اسم العامل"
                   className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2.5 text-white focus:outline-none focus:border-amber-500"
                 />
               </div>
@@ -1128,8 +1137,8 @@ export const PayrollWorkforceView: React.FC = () => {
                       const d = parseFloat(e.target.value) || 0;
                       setNewSlipAbsenceDays(e.target.value);
                       const emp = employees.find((x) => x.id === newSlipEmpId);
-                      const dailyRate = (emp?.basicSalary || 12000) / 30;
-                      setNewSlipAbsenceDeduction(String(Math.round(d * dailyRate)));
+                      const dailyRate = (emp?.basicSalary || 0) / 30;
+                      setNewSlipAbsenceDeduction(String(roundMoney(d * dailyRate)));
                     }}
                     className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-white font-mono"
                   />
@@ -1151,7 +1160,7 @@ export const PayrollWorkforceView: React.FC = () => {
                   rows={2}
                   value={newSlipNotes}
                   onChange={(e) => setNewSlipNotes(e.target.value)}
-                  placeholder="مثال: مكافأة إنهاء المخططات التنفيذية وتسليم المستخلص..."
+                  placeholder="سبب المكافأة أو ملاحظات الراتب"
                   className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2.5 text-white focus:outline-none focus:border-amber-500"
                 />
               </div>

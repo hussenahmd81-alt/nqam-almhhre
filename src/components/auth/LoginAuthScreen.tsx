@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useErp } from '../../context/ErpContext';
 import { UserRole } from '../../types/erp';
 import { USER_PROFILES, ROLES_CONFIG } from '../../services/dataService';
@@ -18,18 +18,26 @@ import {
 } from 'lucide-react';
 
 export const LoginAuthScreen: React.FC = () => {
-  const { loginWithPin, userProfiles } = useErp();
+  const { loginWithPin, userProfiles, activeUserRoles } = useErp();
   const [selectedRole, setSelectedRole] = useState<UserRole>('super_admin');
   const [pin, setPin] = useState<string>('');
   const [showPin, setShowPin] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
-  const roles: { id: UserRole; icon: React.ComponentType<{ className?: string }>; color: string }[] = [
+  const allRoles: { id: UserRole; icon: React.ComponentType<{ className?: string }>; color: string }[] = [
     { id: 'super_admin', icon: ShieldCheck, color: 'amber' },
     { id: 'accountant', icon: Users, color: 'emerald' },
     { id: 'data_entry', icon: HardHat, color: 'sky' }
   ];
+  const roles = allRoles.filter((role) => activeUserRoles.includes(role.id));
+
+  useEffect(() => {
+    if (!activeUserRoles.includes(selectedRole)) {
+      setSelectedRole(activeUserRoles[0] || 'super_admin');
+      setPin('');
+    }
+  }, [activeUserRoles, selectedRole]);
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -244,7 +252,7 @@ export const LoginAuthScreen: React.FC = () => {
             <div className="space-y-1">
               <span className="font-bold text-white block">ملاحظة أمنية:</span>
               <p className="text-[11px] text-slate-400 leading-relaxed">
-                هذا النظام محمي بنظام التشفير وصلاحيات الوصول المعتمدة. يتم تعيين وإدارة الرموز السرية وصلاحيات الموظفين حصراً من قِبل المدير العام ({userProfiles.super_admin?.nameAr || 'صادق جعفر'}).
+                هذا النظام محمي بصلاحيات وصول منفصلة. يمكن لكل مستخدم تغيير بيانات حسابه، ويستطيع المدير العام إدارة بقية الحسابات.
               </p>
             </div>
           </div>

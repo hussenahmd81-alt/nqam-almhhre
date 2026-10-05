@@ -140,11 +140,10 @@ export const DesktopSidebar: React.FC = () => {
     },
     {
       id: 'settings',
-      label: 'إعدادات المدير وكلمات السر',
-      sub: 'تعديل الأسماء ورموز PIN',
+      label: currentRole === 'super_admin' ? 'إدارة الحسابات وكلمات السر' : 'إعدادات حسابي',
+      sub: 'تعديل الاسم ورمز الدخول',
       icon: Settings,
-      allowed: currentRole === 'super_admin',
-      restrictedLabel: 'حصري للمدير العام فقط'
+      allowed: true
     },
     {
       id: 'audit',
@@ -263,7 +262,7 @@ export const DesktopSidebar: React.FC = () => {
                 <span className="text-[10px] text-amber-400 underline decoration-dotted font-medium">تبديل</span>
               </div>
               <span className="text-[10px] text-slate-400 block truncate">
-                انقر لمحاكاة واختبار الصلاحيات
+                انقر للتبديل إلى حساب آخر بعد التحقق
               </span>
             </div>
           )}

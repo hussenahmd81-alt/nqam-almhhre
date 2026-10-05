@@ -45,7 +45,8 @@ export const CashFlowView: React.FC = () => {
     projects,
     currentUser,
     currentRole,
-    hasPermission
+    hasPermission,
+    companyBillingInfo
   } = useErp();
 
   // Active view tab inside Cash Flow: 'ledger' | 'closing_history'
@@ -907,8 +908,8 @@ export const CashFlowView: React.FC = () => {
                   required
                   placeholder={
                     voucherModalType === 'cash_in'
-                      ? 'مثال: الشيخ عبدالمحسن العثمان، شركة التطوير...'
-                      : 'مثال: مؤسسة الواجهات، مقاول الحديد، ورشة النجارة...'
+                      ? 'اسم العميل أو الجهة الواردة منها الدفعة'
+                      : 'اسم المورد أو المقاول أو المستلم'
                   }
                   value={partyName}
                   onChange={(e) => setPartyName(e.target.value)}
@@ -977,7 +978,7 @@ export const CashFlowView: React.FC = () => {
                   </label>
                   <input
                     type="text"
-                    placeholder="مثال: REF-10928 أو CHK-8812"
+                    placeholder="رقم المرجع أو الشيك"
                     value={referenceDocNumber}
                     onChange={(e) => setReferenceDocNumber(e.target.value)}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-amber-500"
@@ -1175,7 +1176,9 @@ export const CashFlowView: React.FC = () => {
                 LM
               </div>
               <h2 className="text-lg font-bold text-slate-900">شركة لمسات المعمار للمقاولات</h2>
-              <p className="text-xs text-slate-500">سجل تجاري: 1010884920 | الرقم الضريبي: 310294857200003</p>
+              <p className="text-xs text-slate-500">
+                سجل تجاري: {companyBillingInfo.commercialReg || 'غير مضاف'} | الرقم الضريبي: {companyBillingInfo.vatNumber || 'غير مضاف'}
+              </p>
               <div className="mt-3 inline-block px-4 py-1 rounded-full text-xs font-bold border border-slate-300 bg-slate-50">
                 {selectedVoucherForReceipt.type === 'cash_in' ? 'إيصال سند قبض نقدي' : 'إيصال سند صرف نقدي'}
               </div>

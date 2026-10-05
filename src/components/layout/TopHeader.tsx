@@ -11,6 +11,7 @@ import {
   Lock,
   ChevronDown,
   LogOut
+  ,Database
 } from 'lucide-react';
 
 export const TopHeader: React.FC = () => {
@@ -23,6 +24,7 @@ export const TopHeader: React.FC = () => {
     setIsRoleModalOpen,
     auditLogs,
     logout
+    ,cloudSyncStatus
   } = useErp();
 
   const [currentTime, setCurrentTime] = useState<string>('');
@@ -69,6 +71,32 @@ export const TopHeader: React.FC = () => {
 
         {/* Zone 2: Domain Verification & Security Tag (Clean unboxed) */}
         <div className="hidden lg:flex items-center gap-4 text-xs text-slate-400">
+          <div
+            className={`flex items-center gap-1.5 font-semibold ${
+              cloudSyncStatus === 'synced'
+                ? 'text-emerald-400'
+                : cloudSyncStatus === 'error'
+                ? 'text-rose-400'
+                : cloudSyncStatus === 'disabled'
+                ? 'text-slate-500'
+                : 'text-amber-400'
+            }`}
+            title="حالة مزامنة قاعدة بيانات Convex"
+          >
+            <Database className="w-3.5 h-3.5" />
+            <span>
+              {cloudSyncStatus === 'synced'
+                ? 'قاعدة البيانات متزامنة'
+                : cloudSyncStatus === 'saving'
+                ? 'جاري حفظ البيانات'
+                : cloudSyncStatus === 'loading'
+                ? 'جاري تحميل البيانات'
+                : cloudSyncStatus === 'error'
+                ? 'تعذر اتصال القاعدة'
+                : 'قاعدة البيانات غير مربوطة'}
+            </span>
+          </div>
+
           <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-900/80 border border-slate-800 text-slate-300">
             <Globe className="w-3.5 h-3.5 text-sky-400" />
             <span className="font-mono text-[11px] truncate max-w-[140px]">

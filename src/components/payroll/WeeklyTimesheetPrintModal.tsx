@@ -3,6 +3,7 @@ import { X, Printer, CheckCircle, HardHat, FileSpreadsheet } from 'lucide-react'
 import { WeeklyLaborTimesheet } from '../../types/erp';
 import { COMPANY_BILLING_INFO } from '../../services/dataService';
 import { tafqeetSAR } from '../../utils/financialUtils';
+import { useErp } from '../../context/ErpContext';
 
 interface WeeklyTimesheetPrintModalProps {
   timesheet: WeeklyLaborTimesheet;
@@ -15,6 +16,7 @@ export const WeeklyTimesheetPrintModal: React.FC<WeeklyTimesheetPrintModalProps>
   isOpen,
   onClose
 }) => {
+  const { userProfiles } = useErp();
   if (!isOpen) return null;
 
   const handlePrint = () => {
@@ -193,12 +195,12 @@ export const WeeklyTimesheetPrintModal: React.FC<WeeklyTimesheetPrintModalProps>
             <div className="space-y-10">
               <p className="font-bold text-slate-800">أمين الصندوق (مسؤول الصرف الميداني)</p>
               <div className="border-b border-slate-500 mx-auto w-36"></div>
-              <p className="font-semibold text-slate-700">أ. حسام المالي</p>
+              <p className="font-semibold text-slate-700">{userProfiles.accountant.nameAr}</p>
             </div>
             <div className="space-y-10">
               <p className="font-bold text-slate-800">اعتماد مدير المشاريع العام</p>
               <div className="border-b border-slate-500 mx-auto w-36"></div>
-              <p className="font-semibold text-slate-700">م. فهد الزهراني</p>
+              <p className="font-semibold text-slate-700">{userProfiles.super_admin.nameAr}</p>
             </div>
           </div>
 

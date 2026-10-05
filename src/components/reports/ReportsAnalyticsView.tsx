@@ -408,11 +408,11 @@ export const ReportsAnalyticsView: React.FC = () => {
                 <div className="grid grid-cols-2 gap-8 pt-6 border-t-2 border-slate-800 text-center text-xs">
                   <div className="space-y-8">
                     <p className="font-bold text-slate-800">إعداد المحاسب المسؤول</p>
-                    <p className="text-slate-800 font-bold">{userProfiles.accountant?.nameAr || 'حسين احمد'}</p>
+                    <p className="text-slate-800 font-bold">{userProfiles.accountant?.nameAr || 'المحاسب المالي'}</p>
                   </div>
                   <div className="space-y-8">
                     <p className="font-bold text-slate-800">اعتماد الإدارة العامة</p>
-                    <p className="text-slate-800 font-bold">{userProfiles.super_admin?.nameAr || 'صادق جعفر'}</p>
+                    <p className="text-slate-800 font-bold">{userProfiles.super_admin?.nameAr || 'المدير العام'}</p>
                   </div>
                 </div>
 

@@ -28,7 +28,7 @@ export const OfficialInvoicePrintModal: React.FC<OfficialInvoicePrintModalProps>
         <div className="no-print bg-slate-900 px-6 py-3.5 flex items-center justify-between border-b border-slate-800">
           <div className="flex items-center gap-2 text-white text-xs font-medium">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-            <span>معاينة الفاتورة الرسمية المتوافقة مع معايير ZATCA (هيئة الزكاة والضريبة والجمارك)</span>
+            <span>معاينة الفاتورة الرسمية والحسابات التفصيلية</span>
           </div>
 
           <div className="flex items-center gap-2">
@@ -94,7 +94,7 @@ export const OfficialInvoicePrintModal: React.FC<OfficialInvoicePrintModalProps>
                     </div>
                   </div>
                 </div>
-                <span className="text-[9px] font-mono text-slate-600 mt-1">ZATCA e-Invoice</span>
+                <span className="text-[9px] font-mono text-slate-600 mt-1">ERP Invoice QR</span>
               </div>
 
               <div className="text-[11px] text-slate-700 space-y-0.5 text-right sm:text-left">
@@ -181,8 +181,8 @@ export const OfficialInvoicePrintModal: React.FC<OfficialInvoicePrintModalProps>
                 المشروع المعماري المنفذ
               </span>
               <p className="text-sm font-black text-slate-900">{invoice.projectName || 'مشروع هندسي عام'}</p>
-              <p className="text-slate-600 text-[11px]">موقع المشروع: مدينة الرياض - نطاق لمسات المعمار</p>
-              <p className="text-slate-600 text-[11px]">المدير العام: {userProfiles.super_admin?.nameAr || 'صادق جعفر'}</p>
+              <p className="text-slate-600 text-[11px]">موقع المشروع: {invoice.clientAddress || 'غير مضاف'}</p>
+              <p className="text-slate-600 text-[11px]">المدير العام: {userProfiles.super_admin?.nameAr || 'المدير العام'}</p>
             </div>
           </div>
 
@@ -237,7 +237,10 @@ export const OfficialInvoicePrintModal: React.FC<OfficialInvoicePrintModalProps>
 
               {/* Payment Bank Details */}
               <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50 text-[11px] space-y-1.5">
-                <span className="font-bold text-slate-800 block">الحسابات البنكية المعتمدة للتحويل:</span>
+                  <span className="font-bold text-slate-800 block">الحسابات البنكية المعتمدة للتحويل:</span>
+                {COMPANY_BILLING_INFO.bankDetails.length === 0 && (
+                  <span className="text-slate-500">لم تُضف بيانات مصرفية بعد.</span>
+                )}
                 {COMPANY_BILLING_INFO.bankDetails.map((b, i) => (
                   <div key={i} className="flex justify-between items-center text-slate-700 font-mono">
                     <span>{b.bankName}:</span>
@@ -318,7 +321,7 @@ export const OfficialInvoicePrintModal: React.FC<OfficialInvoicePrintModalProps>
             <div>
               <p className="font-bold text-slate-700">مدير الحسابات والمالية</p>
               <div className="mt-8 pt-1 border-t border-slate-300 font-semibold text-slate-900">
-                {userProfiles.accountant?.nameAr || 'حسين احمد'}
+                {userProfiles.accountant?.nameAr || 'المحاسب المالي'}
               </div>
             </div>
 
@@ -336,14 +339,14 @@ export const OfficialInvoicePrintModal: React.FC<OfficialInvoicePrintModalProps>
             <div>
               <p className="font-bold text-slate-700">المدير العام والاعتماد الهندسي</p>
               <div className="mt-8 pt-1 border-t border-slate-300 font-semibold text-slate-900">
-                {userProfiles.super_admin?.nameAr || 'صادق جعفر'}
+                {userProfiles.super_admin?.nameAr || 'المدير العام'}
               </div>
             </div>
           </div>
 
           {/* Footer Notice & Credit */}
           <div className="mt-8 border-t border-slate-200 pt-3 flex flex-col sm:flex-row items-center justify-between text-[10px] text-slate-400 gap-2">
-            <span>تم إصدار هذه الوثيقة إلكترونياً من نظام لمسات المعمار وتعد ملزمة نظامياً وفق أنظمة وزارة التجارة والضريبة.</span>
+            <span>تم إصدار هذه الوثيقة إلكترونياً من نظام لمسات المعمار وفق البيانات المدخلة في النظام.</span>
             <span className="font-medium text-amber-600">تمت برمجة وتطوير النظام بواسطة - شركة فن التقنية الحديثة</span>
           </div>
         </div>
