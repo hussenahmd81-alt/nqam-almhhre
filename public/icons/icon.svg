@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="لمسات المعمار">
+  <rect width="512" height="512" rx="108" fill="#1f2937"/>
+  <path d="M104 340V214l152-104 152 104v126h-72v-88l-80-54-80 54v88z" fill="#f59e0b"/>
+  <path d="M208 340V236h96v104z" fill="#fff"/>
+  <path d="M82 366h348v42H82z" fill="#f59e0b"/>
+</svg>

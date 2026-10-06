@@ -3,21 +3,17 @@ import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
 
-// Disable browser asset caching: Clear CacheStorage and ServiceWorkers on load
 if (typeof window !== 'undefined') {
-  try {
-    if ('caches' in window) {
-      caches.keys().then((keys) => {
-        keys.forEach((key) => caches.delete(key));
-      });
-    }
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.getRegistrations().then((registrations) => {
-        registrations.forEach((reg) => reg.unregister());
-      });
-    }
-  } catch (err) {
-    console.warn('Cache purge notice:', err);
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker
+        .register(`${import.meta.env.BASE_URL}sw.js`, {
+          scope: import.meta.env.BASE_URL,
+        })
+        .catch((error) => {
+          console.warn('تعذر تفعيل وضع العمل دون اتصال:', error);
+        });
+    });
   }
 }
 

@@ -21,6 +21,7 @@ import { NotificationToast } from './components/common/NotificationToast';
 import { MobileBottomNavBar } from './components/layout/MobileBottomNavBar';
 import { LoginAuthScreen } from './components/auth/LoginAuthScreen';
 import { DirectorSettingsView } from './components/settings/DirectorSettingsView';
+import { PwaInstallPrompt } from './components/pwa/PwaInstallPrompt';
 
 const AppContent: React.FC = () => {
   const { currentTab, isAuthenticated } = useErp();
@@ -110,6 +111,7 @@ const AppContent: React.FC = () => {
 export default function App() {
   return (
     <ErpProvider>
+      <PwaInstallPrompt />
       <AppContent />
     </ErpProvider>
   );

@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useMemo, useRef } from 'react';
 import { ConvexHttpClient } from 'convex/browser';
+import { readOfflineSnapshot, writeOfflineSnapshot, isPendingCollection } from '../services/offlineStorage';
 import { makeFunctionReference } from 'convex/server';
 import {
   UserRole,
@@ -220,13 +221,23 @@ const saveCloudCollection = makeFunctionReference<
 const ErpContext = createContext<ErpContextType | undefined>(undefined);
 
 export const ErpProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const [offlineSnapshot] = useState(readOfflineSnapshot);
+  const [isOnline, setIsOnline] = useState(() => navigator.onLine);
+  const [syncAttempt, setSyncAttempt] = useState(0);
+  const saveInProgressRef = useRef(false);
+  const latestCollectionsRef = useRef<Record<string, unknown>>({});
+  const hydratedRef = useRef(false);
+  const baselineInitializedRef = useRef(false);
+  const cached = <T,>(collection: string, fallback: T): T =>
+    (offlineSnapshot && Object.hasOwn(offlineSnapshot.collections, collection))
+      ? offlineSnapshot.collections[collection] as T : fallback;
   const [cloudSyncStatus, setCloudSyncStatus] = useState<'disabled' | 'loading' | 'saving' | 'synced' | 'error'>(
     convexClient ? 'loading' : 'disabled'
   );
   const [cloudHydrated, setCloudHydrated] = useState(false);
   const cloudLoadStartedRef = useRef(false);
-  const cloudRevisionsRef = useRef<Record<string, number>>({});
-  const cloudSerializedRef = useRef<Record<string, string>>({});
+  const cloudRevisionsRef = useRef<Record<string, number>>(offlineSnapshot?.revisions ?? {});
+  const cloudSerializedRef = useRef<Record<string, string>>(offlineSnapshot?.synced ?? {});
   // Stored PINs for roles (can be updated by Super Admin)
   const [userPins, setUserPins] = useState<Record<UserRole, string>>(() => {
     try {
@@ -238,6 +249,7 @@ export const ErpProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Stored Profiles / Names for roles (can be updated by Super Admin)
   const [userProfiles, setUserProfiles] = useState<Record<UserRole, UserProfile>>(() => {
+    if (offlineSnapshot?.collections.userProfiles) return cached('userProfiles', USER_PROFILES);
     try {
       const stored = localStorage.getItem('lamasat_user_profiles');
       if (stored) return JSON.parse(stored);
@@ -246,6 +258,7 @@ export const ErpProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   });
 
   const [activeUserRoles, setActiveUserRoles] = useState<UserRole[]>(() => {
+    if (offlineSnapshot?.collections.activeUserRoles) return cached('activeUserRoles', ['super_admin', 'accountant', 'data_entry'] as UserRole[]);
     try {
       const stored = localStorage.getItem('lamasat_active_user_roles');
       if (stored) {
@@ -283,10 +296,10 @@ export const ErpProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [currentTab, setCurrentTab] = useState<string>('dashboard');
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
   const [license, setLicense] = useState<LicenseInfo>(getStoredLicense());
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(INITIAL_AUDIT_LOGS);
-  const [projects, setProjects] = useState<Project[]>(INITIAL_PROJECTS);
-  const [transactions, setTransactions] = useState<FinancialTransaction[]>(INITIAL_TRANSACTIONS);
-  const [siteLogs, setSiteLogs] = useState<SiteOperationLog[]>(INITIAL_SITE_LOGS);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(() => cached('auditLogs', INITIAL_AUDIT_LOGS));
+  const [projects, setProjects] = useState<Project[]>(() => cached('projects', INITIAL_PROJECTS));
+  const [transactions, setTransactions] = useState<FinancialTransaction[]>(() => cached('transactions', INITIAL_TRANSACTIONS));
+  const [siteLogs, setSiteLogs] = useState<SiteOperationLog[]>(() => cached('siteLogs', INITIAL_SITE_LOGS));
   const [isRoleModalOpen, setIsRoleModalOpen] = useState<boolean>(false);
   const [notificationMessage, setNotificationMessage] = useState<{
     title: string;
@@ -295,31 +308,31 @@ export const ErpProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   } | null>(null);
 
   // Task 3: Cash & Safe State
-  const [cashVouchers, setCashVouchers] = useState<CashVoucher[]>(INITIAL_CASH_VOUCHERS);
-  const [dailyRegisters, setDailyRegisters] = useState<DailySafeRegister[]>(INITIAL_SAFE_REGISTERS);
-  const [openingBalance, setOpeningBalance] = useState<number>(0); // Zeroed-out initial opening balance
+  const [cashVouchers, setCashVouchers] = useState<CashVoucher[]>(() => cached('cashVouchers', INITIAL_CASH_VOUCHERS));
+  const [dailyRegisters, setDailyRegisters] = useState<DailySafeRegister[]>(() => cached('dailyRegisters', INITIAL_SAFE_REGISTERS));
+  const [openingBalance, setOpeningBalance] = useState<number>(() => cached('openingBalance', 0));
 
   // Task 4: Invoices State
-  const [invoices, setInvoices] = useState<Invoice[]>(INITIAL_INVOICES);
+  const [invoices, setInvoices] = useState<Invoice[]>(() => cached('invoices', INITIAL_INVOICES));
   const [selectedInvoiceForPrint, setSelectedInvoiceForPrint] = useState<Invoice | null>(null);
 
   // Task 5: Payroll & Workforce State
-  const [employees, setEmployees] = useState<Employee[]>(INITIAL_EMPLOYEES);
-  const [salarySlips, setSalarySlips] = useState<MonthlySalarySlip[]>(INITIAL_SALARY_SLIPS);
-  const [projectWorkers, setProjectWorkers] = useState<ProjectWorker[]>(INITIAL_PROJECT_WORKERS);
-  const [weeklyTimesheets, setWeeklyTimesheets] = useState<WeeklyLaborTimesheet[]>(INITIAL_WEEKLY_TIMESHEETS);
+  const [employees, setEmployees] = useState<Employee[]>(() => cached('employees', INITIAL_EMPLOYEES));
+  const [salarySlips, setSalarySlips] = useState<MonthlySalarySlip[]>(() => cached('salarySlips', INITIAL_SALARY_SLIPS));
+  const [projectWorkers, setProjectWorkers] = useState<ProjectWorker[]>(() => cached('projectWorkers', INITIAL_PROJECT_WORKERS));
+  const [weeklyTimesheets, setWeeklyTimesheets] = useState<WeeklyLaborTimesheet[]>(() => cached('weeklyTimesheets', INITIAL_WEEKLY_TIMESHEETS));
 
   // Task 6: Operational Logistics & Expenses State
-  const [procurements, setProcurements] = useState<DailyProcurementItem[]>(INITIAL_DAILY_PROCUREMENTS);
-  const [fuelLogs, setFuelLogs] = useState<FuelFleetLog[]>(INITIAL_FUEL_LOGS);
-  const [officeExpenses, setOfficeExpenses] = useState<OfficeOverheadExpense[]>(INITIAL_OFFICE_EXPENSES);
+  const [procurements, setProcurements] = useState<DailyProcurementItem[]>(() => cached('procurements', INITIAL_DAILY_PROCUREMENTS));
+  const [fuelLogs, setFuelLogs] = useState<FuelFleetLog[]>(() => cached('fuelLogs', INITIAL_FUEL_LOGS));
+  const [officeExpenses, setOfficeExpenses] = useState<OfficeOverheadExpense[]>(() => cached('officeExpenses', INITIAL_OFFICE_EXPENSES));
 
   // Task 7: Subcontractors, Vendors & Rental Fleet State
-  const [vendors, setVendors] = useState<SubcontractorVendor[]>(INITIAL_VENDORS);
-  const [vendorTransactions, setVendorTransactions] = useState<VendorTransaction[]>(INITIAL_VENDOR_TRANSACTIONS);
-  const [rentalMachinery, setRentalMachinery] = useState<RentalMachinery[]>(INITIAL_RENTAL_MACHINERY);
-  const [rentalWorkLogs, setRentalWorkLogs] = useState<RentalWorkLog[]>(INITIAL_RENTAL_WORK_LOGS);
-  const [rentalPayments, setRentalPayments] = useState<RentalPayment[]>(INITIAL_RENTAL_PAYMENTS);
+  const [vendors, setVendors] = useState<SubcontractorVendor[]>(() => cached('vendors', INITIAL_VENDORS));
+  const [vendorTransactions, setVendorTransactions] = useState<VendorTransaction[]>(() => cached('vendorTransactions', INITIAL_VENDOR_TRANSACTIONS));
+  const [rentalMachinery, setRentalMachinery] = useState<RentalMachinery[]>(() => cached('rentalMachinery', INITIAL_RENTAL_MACHINERY));
+  const [rentalWorkLogs, setRentalWorkLogs] = useState<RentalWorkLog[]>(() => cached('rentalWorkLogs', INITIAL_RENTAL_WORK_LOGS));
+  const [rentalPayments, setRentalPayments] = useState<RentalPayment[]>(() => cached('rentalPayments', INITIAL_RENTAL_PAYMENTS));
 
   const cloudCollections = useMemo<Record<string, unknown>>(
     () => ({
@@ -373,7 +386,46 @@ export const ErpProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   );
 
   useEffect(() => {
-    if (!convexClient || cloudLoadStartedRef.current) return;
+    const online = () => { setIsOnline(true); setSyncAttempt((value) => value + 1); };
+    const offline = () => setIsOnline(false);
+    window.addEventListener('online', online);
+    window.addEventListener('offline', offline);
+    return () => {
+      window.removeEventListener('online', online);
+      window.removeEventListener('offline', offline);
+    };
+  }, []);
+
+  latestCollectionsRef.current = cloudCollections;
+  if (!baselineInitializedRef.current) {
+    baselineInitializedRef.current = true;
+    if (!offlineSnapshot) {
+      cloudSerializedRef.current = Object.fromEntries(
+        Object.entries(cloudCollections).map(([key, data]) => [key, JSON.stringify(data)])
+      );
+    }
+  }
+
+  const persistOffline = () => {
+    try {
+      writeOfflineSnapshot({
+        collections: latestCollectionsRef.current,
+        revisions: cloudRevisionsRef.current,
+        synced: cloudSerializedRef.current,
+      });
+      return true;
+    } catch {
+      setNotificationMessage({ title: 'تعذر الحفظ على الجهاز', message: 'مساحة تخزين المتصفح غير متاحة. احفظ نسخة احتياطية قبل إغلاق النظام.', type: 'error' });
+      return false;
+    }
+  };
+
+  useEffect(() => {
+    persistOffline();
+  }, [cloudCollections, cloudHydrated]);
+
+  useEffect(() => {
+    if (!convexClient || !isOnline || cloudLoadStartedRef.current || hydratedRef.current) return;
     cloudLoadStartedRef.current = true;
     setCloudSyncStatus('loading');
 
@@ -381,6 +433,12 @@ export const ErpProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       .query(loadCloudCollections, { workspace: CLOUD_WORKSPACE })
       .then((rows) => {
         for (const row of rows) {
+          const localSnapshot = {
+            collections: latestCollectionsRef.current,
+            revisions: cloudRevisionsRef.current,
+            synced: cloudSerializedRef.current,
+          };
+          if (isPendingCollection(localSnapshot, row.collection)) continue;
           cloudRevisionsRef.current[row.collection] = row.revision;
           cloudSerializedRef.current[row.collection] = JSON.stringify(row.data);
 
@@ -409,16 +467,18 @@ export const ErpProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             case 'activeUserRoles': setActiveUserRoles(row.data as UserRole[]); break;
           }
         }
+        hydratedRef.current = true;
         setCloudHydrated(true);
         setCloudSyncStatus('synced');
       })
       .catch(() => {
+        cloudLoadStartedRef.current = false;
         setCloudSyncStatus('error');
       });
-  }, []);
+  }, [isOnline, syncAttempt]);
 
   useEffect(() => {
-    if (!convexClient || !cloudHydrated) return;
+    if (!convexClient || !cloudHydrated || !isOnline || saveInProgressRef.current) return;
 
     const pending = Object.entries(cloudCollections)
       .map(([collection, data]) => ({ collection, data, serialized: JSON.stringify(data) }))
@@ -430,7 +490,9 @@ export const ErpProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
 
     const timer = window.setTimeout(async () => {
+      saveInProgressRef.current = true;
       setCloudSyncStatus('saving');
+      let failed = false;
       try {
         for (const item of pending) {
           const result = await convexClient.mutation(saveCloudCollection, {
@@ -441,15 +503,24 @@ export const ErpProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           });
           cloudRevisionsRef.current[item.collection] = result.revision;
           cloudSerializedRef.current[item.collection] = item.serialized;
+          persistOffline();
         }
         setCloudSyncStatus('synced');
-      } catch {
+      } catch (error) {
+        failed = true;
         setCloudSyncStatus('error');
+        if (String(error).includes('REVISION_CONFLICT')) {
+          setNotificationMessage({ title: 'تعارض في المزامنة', message: 'تغيرت بيانات السحابة من جهاز آخر. تعديلاتك محفوظة على هذا الجهاز؛ صدّر نسخة احتياطية لمراجعة التعارض قبل المزامنة.', type: 'error' });
+        }
+      } finally {
+        saveInProgressRef.current = false;
+        persistOffline();
+        if (!failed) setSyncAttempt((value) => value + 1);
       }
     }, 800);
 
     return () => window.clearTimeout(timer);
-  }, [cloudCollections, cloudHydrated]);
+  }, [cloudCollections, cloudHydrated, isOnline, syncAttempt]);
 
   // Sync stored license
   useEffect(() => {
